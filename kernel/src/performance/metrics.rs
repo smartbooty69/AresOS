@@ -52,11 +52,22 @@ impl PerformanceCounters {
     /// This heuristic assumes the PIT fires at exactly 100 Hz.  It takes two
     /// snapshots separated by a busy wait of ~10 ms and measures the TSC delta.
     /// The result is a rough estimate useful for display purposes.
+    ///
+    /// Returns 0 if timer interrupts are not firing or the measurement times out.
     pub fn cpu_frequency_mhz() -> u64 {
+        const MAX_SPIN_ITERS: u64 = 1_000_000_000;
+
         let start = Self::read();
+        let target_tick = start.ticks() + 10;
+        let mut iters: u64 = 0;
+
         // Busy wait for ~10 timer ticks (≈100 ms at 100 Hz PIT rate).
-        while TICK_COUNTER.load(Ordering::Relaxed) < start.ticks() + 10 {
+        while TICK_COUNTER.load(Ordering::Relaxed) < target_tick {
             core::hint::spin_loop();
+            iters += 1;
+            if iters >= MAX_SPIN_ITERS {
+                return 0; // Timed out: timer interrupts are not firing.
+            }
         }
         let end = Self::read();
 

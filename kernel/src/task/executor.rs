@@ -35,7 +35,9 @@ impl Executor {
         if self.tasks.insert(task.id, task).is_some() {
             panic!("task with same ID already in executor");
         }
-        self.task_queue.push(task_id).expect("task queue full");
+        self.task_queue
+            .push(task_id)
+            .unwrap_or_else(|_| panic!("task queue full when spawning task {:?}", task_id));
     }
 
     fn run_ready_tasks(&mut self) {
@@ -99,7 +101,9 @@ impl TaskWaker {
     }
 
     fn wake_task(&self) {
-        self.task_queue.push(self.task_id).expect("task queue full");
+        self.task_queue
+            .push(self.task_id)
+            .unwrap_or_else(|_| panic!("task queue full when waking task {:?}", self.task_id));
     }
 }
 
