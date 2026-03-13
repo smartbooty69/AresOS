@@ -45,10 +45,7 @@ pub fn translate_addr(addr: VirtAddr, physical_memory_offset: VirtAddr) -> Optio
 }
 
 fn translate_addr_inner(addr: VirtAddr, physical_memory_offset: VirtAddr) -> Option<PhysAddr> {
-    use x86_64::{
-        registers::control::Cr3,
-        structures::paging::page_table::FrameError,
-    };
+    use x86_64::{registers::control::Cr3, structures::paging::page_table::FrameError};
 
     let (level_4_frame, _) = Cr3::read();
 
@@ -112,7 +109,10 @@ impl BootInfoFrameAllocator {
     /// The caller must guarantee that the memory map is valid.  In particular,
     /// all frames labelled `Usable` must actually be unused.
     pub unsafe fn init(memory_map: &'static MemoryMap) -> Self {
-        BootInfoFrameAllocator { memory_map, next: 0 }
+        BootInfoFrameAllocator {
+            memory_map,
+            next: 0,
+        }
     }
 
     fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {

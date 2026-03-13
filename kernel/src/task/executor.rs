@@ -41,7 +41,11 @@ impl Executor {
     }
 
     fn run_ready_tasks(&mut self) {
-        let Self { tasks, task_queue, waker_cache } = self;
+        let Self {
+            tasks,
+            task_queue,
+            waker_cache,
+        } = self;
 
         while let Some(task_id) = task_queue.pop() {
             let task = match tasks.get_mut(&task_id) {
@@ -97,7 +101,10 @@ struct TaskWaker {
 
 impl TaskWaker {
     fn new(task_id: TaskId, task_queue: Arc<ArrayQueue<TaskId>>) -> Waker {
-        Waker::from(Arc::new(TaskWaker { task_id, task_queue }))
+        Waker::from(Arc::new(TaskWaker {
+            task_id,
+            task_queue,
+        }))
     }
 
     fn wake_task(&self) {

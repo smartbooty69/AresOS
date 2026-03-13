@@ -71,8 +71,8 @@ impl PerformanceCounters {
         }
         let end = Self::read();
 
-        let tsc_delta   = end.tsc().saturating_sub(start.tsc());
-        let tick_delta  = end.ticks().saturating_sub(start.ticks());
+        let tsc_delta = end.tsc().saturating_sub(start.tsc());
+        let tick_delta = end.ticks().saturating_sub(start.ticks());
 
         if tick_delta == 0 {
             return 0;

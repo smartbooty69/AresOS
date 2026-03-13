@@ -23,8 +23,7 @@ fn main(boot_info: &'static BootInfo) -> ! {
     let mut frame_allocator =
         unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
 
-    allocator::init_heap(&mut mapper, &mut frame_allocator)
-        .expect("heap initialisation failed");
+    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialisation failed");
 
     test_main();
     hlt_loop();

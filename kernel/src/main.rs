@@ -29,14 +29,16 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
 
     // Set up the kernel heap.
-    allocator::init_heap(&mut mapper, &mut frame_allocator)
-        .expect("heap initialisation failed");
+    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialisation failed");
 
     println!("Memory subsystem initialised.");
 
     // Display performance counters at startup.
     let counters = PerformanceCounters::read();
-    println!("CPU frequency estimate: {} MHz", PerformanceCounters::cpu_frequency_mhz());
+    println!(
+        "CPU frequency estimate: {} MHz",
+        PerformanceCounters::cpu_frequency_mhz()
+    );
     println!("System ticks since boot: {}", counters.ticks());
 
     // Run the async executor with the keyboard task.

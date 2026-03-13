@@ -31,8 +31,7 @@ impl ProfileEntry {
 }
 
 /// Ring-buffer of profile entries, protected by a spinlock.
-static ENTRIES: Mutex<[Option<ProfileEntry>; MAX_ENTRIES]> =
-    Mutex::new([None; MAX_ENTRIES]);
+static ENTRIES: Mutex<[Option<ProfileEntry>; MAX_ENTRIES]> = Mutex::new([None; MAX_ENTRIES]);
 
 /// Write index into the ring buffer.
 static WRITE_INDEX: AtomicUsize = AtomicUsize::new(0);
@@ -78,7 +77,11 @@ impl Drop for Profiler {
 
 fn record(label: &'static str, start_tsc: u64, end_tsc: u64) {
     let idx = WRITE_INDEX.fetch_add(1, Ordering::Relaxed) % MAX_ENTRIES;
-    let entry = ProfileEntry { label, start_tsc, end_tsc };
+    let entry = ProfileEntry {
+        label,
+        start_tsc,
+        end_tsc,
+    };
     ENTRIES.lock()[idx] = Some(entry);
 }
 
@@ -94,11 +97,7 @@ pub fn with_entries<F: FnMut(&ProfileEntry)>(mut f: F) {
 pub fn print_report() {
     crate::println!("── Profiler report ──");
     with_entries(|e| {
-        crate::println!(
-            "  {:32} {} cycles",
-            e.label,
-            e.elapsed_cycles()
-        );
+        crate::println!("  {:32} {} cycles", e.label, e.elapsed_cycles());
     });
     crate::println!("─────────────────────");
 }
