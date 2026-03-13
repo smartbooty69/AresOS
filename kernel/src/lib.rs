@@ -6,7 +6,6 @@
 
 #![no_std]
 #![no_main]
-#![cfg_attr(test, no_main)]
 #![feature(abi_x86_interrupt)]
 #![feature(alloc_error_handler)]
 #![feature(custom_test_frameworks)]
@@ -43,7 +42,7 @@ pub fn init() {
 #[repr(u32)]
 pub enum QemuExitCode {
     Success = 0x10,
-    Failed  = 0x11,
+    Failed = 0x11,
 }
 
 pub fn exit_qemu(exit_code: QemuExitCode) {
