@@ -138,15 +138,21 @@ The project also serves as a **long-term exploration of operating system enginee
 # Project Structure
 
 ```
-aresos
-│
-├── kernel        core kernel code
-├── bootloader    bootloader configuration
-├── drivers       hardware drivers
-├── memory        memory manager
-├── scheduler     task scheduler
-├── filesystem    storage system
-└── userland      shell and applications
+AresOS
+├── Cargo.toml                 workspace manifest
+├── kernel/
+│   ├── Cargo.toml             kernel crate manifest
+│   ├── x86_64-unknown-none.json
+│   ├── src/
+│   │   ├── main.rs            kernel entry point
+│   │   ├── lib.rs             shared kernel modules
+│   │   ├── interrupts.rs      IDT + IRQ handlers
+│   │   ├── memory.rs          paging + frame allocator
+│   │   ├── allocator.rs       heap allocator
+│   │   ├── task/              async executor + keyboard
+│   │   └── performance/       metrics + profiler
+│   └── tests/                 boot/integration tests
+└── .cargo/config.toml         target + runner configuration
 ```
 
 ---
@@ -158,12 +164,19 @@ Install dependencies:
 ```
 rustup component add llvm-tools-preview
 cargo install bootimage
+rustup component add rust-src
+```
+
+Install QEMU (example on Ubuntu/Debian):
+
+```
+sudo apt install qemu-system-x86
 ```
 
 Build the OS:
 
 ```
-cargo bootimage
+cargo build -p kernel
 ```
 
 ---
@@ -173,8 +186,13 @@ cargo bootimage
 Run AresOS using QEMU:
 
 ```
-qemu-system-x86_64 \
--drive format=raw,file=target/x86_64-aresos/debug/bootimage-aresos.bin
+cargo run -p kernel
+```
+
+Run tests (unit + integration under QEMU):
+
+```
+cargo test -p kernel
 ```
 
 ---

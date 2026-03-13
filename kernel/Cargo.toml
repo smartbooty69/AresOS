@@ -11,6 +11,7 @@ test = false
 [lib]
 name = "kernel"
 path = "src/lib.rs"
+doctest = false
 
 [dependencies]
 bootloader = { version = "0.9", features = ["map_physical_memory"] }
@@ -28,3 +29,15 @@ futures-util = { version = "0.3", default-features = false, features = ["alloc"]
 
 [dev-dependencies]
 bootloader = { version = "0.9", features = ["map_physical_memory"] }
+
+[package.metadata.bootimage]
+test-args = [
+	"-device",
+	"isa-debug-exit,iobase=0xf4,iosize=0x04",
+	"-serial",
+	"stdio",
+	"-display",
+	"none",
+]
+test-success-exit-code = 33
+test-timeout = 300
