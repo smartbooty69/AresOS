@@ -5,6 +5,7 @@
 
 pub mod executor;
 pub mod keyboard;
+pub mod timer;
 
 use alloc::boxed::Box;
 use core::{

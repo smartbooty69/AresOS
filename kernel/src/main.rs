@@ -11,7 +11,7 @@ use kernel::{
     allocator, hlt_loop, memory,
     performance::metrics::PerformanceCounters,
     println,
-    task::{executor::Executor, keyboard, Task},
+    task::{executor::Executor, keyboard, timer, Task},
 };
 use x86_64::VirtAddr;
 
@@ -44,6 +44,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Run the async executor with the keyboard task.
     let mut executor = Executor::new();
     executor.spawn(Task::new(keyboard::print_keypresses()));
+    executor.spawn(Task::new(timer::log_uptime()));
     println!("Kernel ready. Entering event loop.");
     executor.run();
 }
