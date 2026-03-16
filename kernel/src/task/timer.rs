@@ -80,6 +80,21 @@ pub async fn log_uptime() {
     }
 }
 
+/// Periodically print scheduler counters.
+pub async fn log_scheduler_stats() {
+    loop {
+        sleep(Duration::from_secs(5)).await;
+        let stats = crate::task::executor::system_stats();
+        println!(
+            "Scheduler: active={}, sleeping={}, ready={}, completed={}",
+            stats.active_tasks,
+            stats.sleeping_tasks,
+            stats.ready_queue_depth,
+            stats.completed_tasks
+        );
+    }
+}
+
 fn duration_to_ticks(duration: Duration) -> u64 {
     let millis = duration.as_millis();
     if millis == 0 {

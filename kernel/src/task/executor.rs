@@ -4,13 +4,29 @@
 //! The executor uses a wake-queue to avoid busy-polling tasks that are not
 //! yet ready.
 
-use super::{Task, TaskId};
+use super::{Task, TaskId, TaskState};
 use alloc::{collections::BTreeMap, sync::Arc, task::Wake};
-use core::task::{Context, Poll, Waker};
+use core::{
+    sync::atomic::{AtomicUsize, Ordering},
+    task::{Context, Poll, Waker},
+};
 use crossbeam_queue::ArrayQueue;
 
 /// Maximum number of wake notifications that can be queued simultaneously.
 const WAKE_QUEUE_SIZE: usize = 100;
+
+static ACTIVE_TASKS: AtomicUsize = AtomicUsize::new(0);
+static SLEEPING_TASKS: AtomicUsize = AtomicUsize::new(0);
+static READY_QUEUE_DEPTH: AtomicUsize = AtomicUsize::new(0);
+static COMPLETED_TASKS: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Debug, Clone, Copy)]
+pub struct ExecutorStats {
+    pub active_tasks: usize,
+    pub sleeping_tasks: usize,
+    pub ready_queue_depth: usize,
+    pub completed_tasks: usize,
+}
 
 /// A simple round-robin executor for kernel tasks.
 pub struct Executor {
@@ -31,13 +47,29 @@ impl Executor {
 
     /// Enqueue a task for execution.
     pub fn spawn(&mut self, task: Task) {
-        let task_id = task.id;
-        if self.tasks.insert(task.id, task).is_some() {
+        let task_id = task.id();
+        if self.tasks.insert(task_id, task).is_some() {
             panic!("task with same ID already in executor");
         }
+        ACTIVE_TASKS.fetch_add(1, Ordering::Relaxed);
         self.task_queue
             .push(task_id)
             .unwrap_or_else(|_| panic!("task queue full when spawning task {:?}", task_id));
+        READY_QUEUE_DEPTH.store(self.task_queue.len(), Ordering::Relaxed);
+    }
+
+    pub fn stats(&self) -> ExecutorStats {
+        let sleeping_tasks = self
+            .tasks
+            .values()
+            .filter(|task| task.state() == TaskState::Sleeping)
+            .count();
+        ExecutorStats {
+            active_tasks: self.tasks.len(),
+            sleeping_tasks,
+            ready_queue_depth: self.task_queue.len(),
+            completed_tasks: COMPLETED_TASKS.load(Ordering::Relaxed),
+        }
     }
 
     fn run_ready_tasks(&mut self) {
@@ -48,20 +80,34 @@ impl Executor {
         } = self;
 
         while let Some(task_id) = task_queue.pop() {
+            READY_QUEUE_DEPTH.store(task_queue.len(), Ordering::Relaxed);
+
             let task = match tasks.get_mut(&task_id) {
                 Some(task) => task,
                 None => continue,
             };
+
+            if task.state() == TaskState::Sleeping {
+                SLEEPING_TASKS.fetch_sub(1, Ordering::Relaxed);
+            }
+            task.set_state(TaskState::Ready);
+
             let waker = waker_cache
                 .entry(task_id)
                 .or_insert_with(|| TaskWaker::new(task_id, task_queue.clone()));
             let mut context = Context::from_waker(waker);
             match task.poll(&mut context) {
                 Poll::Ready(()) => {
+                    task.set_state(TaskState::Finished);
                     tasks.remove(&task_id);
                     waker_cache.remove(&task_id);
+                    ACTIVE_TASKS.fetch_sub(1, Ordering::Relaxed);
+                    COMPLETED_TASKS.fetch_add(1, Ordering::Relaxed);
                 }
-                Poll::Pending => {}
+                Poll::Pending => {
+                    task.set_state(TaskState::Sleeping);
+                    SLEEPING_TASKS.fetch_add(1, Ordering::Relaxed);
+                }
             }
         }
     }
@@ -92,6 +138,15 @@ impl Default for Executor {
     }
 }
 
+pub fn system_stats() -> ExecutorStats {
+    ExecutorStats {
+        active_tasks: ACTIVE_TASKS.load(Ordering::Relaxed),
+        sleeping_tasks: SLEEPING_TASKS.load(Ordering::Relaxed),
+        ready_queue_depth: READY_QUEUE_DEPTH.load(Ordering::Relaxed),
+        completed_tasks: COMPLETED_TASKS.load(Ordering::Relaxed),
+    }
+}
+
 // ──────────────────────────────── task waker ─────────────────────────────────
 
 struct TaskWaker {
@@ -111,6 +166,7 @@ impl TaskWaker {
         self.task_queue
             .push(self.task_id)
             .unwrap_or_else(|_| panic!("task queue full when waking task {:?}", self.task_id));
+        READY_QUEUE_DEPTH.store(self.task_queue.len(), Ordering::Relaxed);
     }
 }
 
