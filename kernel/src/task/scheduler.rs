@@ -19,6 +19,11 @@ static DEMO_B_COUNT: AtomicU64 = AtomicU64::new(0);
 static PREEMPT_MISSES: AtomicU64 = AtomicU64::new(0);
 static LAST_SWITCH_TICK: AtomicU64 = AtomicU64::new(0);
 static WATCHDOG_TRIPS: AtomicU64 = AtomicU64::new(0);
+static IRQ_PREEMPT_PENDING: AtomicBool = AtomicBool::new(false);
+static IRQ_PREEMPT_REQUESTS: AtomicU64 = AtomicU64::new(0);
+static IRQ_PREEMPT_CHECKPOINTS: AtomicU64 = AtomicU64::new(0);
+static LAST_IRQ_RIP: AtomicU64 = AtomicU64::new(0);
+static LAST_IRQ_RSP: AtomicU64 = AtomicU64::new(0);
 
 const CONTEXT_LAB_MAX_STALL_TICKS: u64 = 10_000;
 
@@ -160,6 +165,10 @@ pub struct ContextSchedulerStats {
     pub demo_b_count: u64,
     pub preempt_misses: u64,
     pub watchdog_trips: u64,
+    pub irq_preempt_requests: u64,
+    pub irq_preempt_checkpoints: u64,
+    pub last_irq_rip: u64,
+    pub last_irq_rsp: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -179,7 +188,15 @@ pub fn on_timer_tick() {
     if ticks % SCHED_QUANTUM_TICKS == 0 {
         NEED_RESCHEDULE.store(true, Ordering::Relaxed);
         RESCHEDULE_REQUESTS.fetch_add(1, Ordering::Relaxed);
+        IRQ_PREEMPT_PENDING.store(true, Ordering::Relaxed);
+        IRQ_PREEMPT_REQUESTS.fetch_add(1, Ordering::Relaxed);
     }
+}
+
+/// Called by the timer IRQ handler with interrupted execution context.
+pub fn on_timer_interrupt_context(interrupted_rip: u64, interrupted_rsp: u64) {
+    LAST_IRQ_RIP.store(interrupted_rip, Ordering::Relaxed);
+    LAST_IRQ_RSP.store(interrupted_rsp, Ordering::Relaxed);
 }
 
 /// Consume a pending reschedule request.
@@ -236,6 +253,14 @@ pub fn preempt_if_requested() {
     }
 }
 
+/// Context-task checkpoint for deferred preemption requested by timer IRQ.
+pub fn preempt_if_irq_pending() {
+    if IRQ_PREEMPT_PENDING.swap(false, Ordering::Relaxed) {
+        IRQ_PREEMPT_CHECKPOINTS.fetch_add(1, Ordering::Relaxed);
+        preempt_if_requested();
+    }
+}
+
 fn context_lab_watchdog_check() {
     let now = TIMER_TICKS.load(Ordering::Relaxed);
     let last = LAST_SWITCH_TICK.load(Ordering::Relaxed);
@@ -275,6 +300,10 @@ pub fn context_stats() -> ContextSchedulerStats {
         demo_b_count,
         preempt_misses: PREEMPT_MISSES.load(Ordering::Relaxed),
         watchdog_trips: WATCHDOG_TRIPS.load(Ordering::Relaxed),
+        irq_preempt_requests: IRQ_PREEMPT_REQUESTS.load(Ordering::Relaxed),
+        irq_preempt_checkpoints: IRQ_PREEMPT_CHECKPOINTS.load(Ordering::Relaxed),
+        last_irq_rip: LAST_IRQ_RIP.load(Ordering::Relaxed),
+        last_irq_rsp: LAST_IRQ_RSP.load(Ordering::Relaxed),
     }
 }
 
@@ -294,7 +323,7 @@ extern "C" fn demo_context_task_a() -> ! {
             let b = DEMO_B_COUNT.load(Ordering::Relaxed);
             crate::println!("ContextLab A={}, B={}", count, b);
         }
-        preempt_if_requested();
+        preempt_if_irq_pending();
         context_lab_watchdog_check();
     }
 }
@@ -306,7 +335,7 @@ extern "C" fn demo_context_task_b() -> ! {
             let a = DEMO_A_COUNT.load(Ordering::Relaxed);
             crate::println!("ContextLab A={}, B={}", a, count);
         }
-        preempt_if_requested();
+        preempt_if_irq_pending();
         context_lab_watchdog_check();
     }
 }

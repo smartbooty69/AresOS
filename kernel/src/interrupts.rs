@@ -156,8 +156,12 @@ extern "x86-interrupt" fn segment_not_present_handler(
 // ───────────────────────── hardware IRQ handlers ─────────────────────────────
 
 /// Timer IRQ: increment the global tick counter and signal end-of-interrupt.
-extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+extern "x86-interrupt" fn timer_interrupt_handler(stack_frame: InterruptStackFrame) {
     crate::performance::metrics::TICK_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    crate::task::scheduler::on_timer_interrupt_context(
+        stack_frame.instruction_pointer.as_u64(),
+        stack_frame.stack_pointer.as_u64(),
+    );
     crate::task::scheduler::on_timer_tick();
     crate::task::timer::notify_tick();
     unsafe {

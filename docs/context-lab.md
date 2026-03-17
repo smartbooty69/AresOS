@@ -20,10 +20,11 @@ cargo run -p kernel --features context-lab
 - boot enters context-task scheduler directly
 - demo tasks increment counters and call `preempt_if_requested()`
 - timer IRQ requests reschedule every scheduler quantum
-- context handoff occurs when a pending preemption request is observed
+- timer IRQ records interrupted RIP/RSP for scheduler telemetry
+- context handoff occurs at deferred checkpoints when pending IRQ preemption is observed
 - log output includes lines like:
   - `ContextLab A=..., B=...`
-  - `Preemptive-groundwork: ... misses=..., watchdog_trips=...`
+  - `Preemptive-groundwork: ... misses=..., watchdog_trips=..., irq_req=..., irq_ckpt=...`
 
 ## Notes
 

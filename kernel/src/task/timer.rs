@@ -139,7 +139,7 @@ pub async fn log_scheduler_groundwork() {
         let stats = crate::task::scheduler::stats();
         let context = crate::task::scheduler::context_stats();
         println!(
-            "Preemptive-groundwork: ticks={}, requests={}, points={}, pending={}, ctx_tasks={}, ctx_switches={}, ctx_live_switch={}, demo_a={}, demo_b={}, misses={}, watchdog_trips={}",
+            "Preemptive-groundwork: ticks={}, requests={}, points={}, pending={}, ctx_tasks={}, ctx_switches={}, ctx_live_switch={}, demo_a={}, demo_b={}, misses={}, watchdog_trips={}, irq_req={}, irq_ckpt={}, irq_rip={:#x}, irq_rsp={:#x}",
             stats.timer_ticks,
             stats.reschedule_requests,
             stats.reschedule_points,
@@ -150,7 +150,11 @@ pub async fn log_scheduler_groundwork() {
             context.demo_a_count,
             context.demo_b_count,
             context.preempt_misses,
-            context.watchdog_trips
+            context.watchdog_trips,
+            context.irq_preempt_requests,
+            context.irq_preempt_checkpoints,
+            context.last_irq_rip,
+            context.last_irq_rsp
         );
     }
 }
