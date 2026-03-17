@@ -119,6 +119,7 @@ impl RunnableContext {
 /// This function returns when another context switches back into `current`.
 pub unsafe fn switch_context(current: &mut CpuContext, next: &CpuContext) {
     asm!(
+        "cli",
         "mov [rdi + 0x00], r15",
         "mov [rdi + 0x08], r14",
         "mov [rdi + 0x10], r13",

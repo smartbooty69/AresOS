@@ -139,7 +139,7 @@ pub async fn log_scheduler_groundwork() {
         let stats = crate::task::scheduler::stats();
         let context = crate::task::scheduler::context_stats();
         println!(
-            "Preemptive-groundwork: ticks={}, requests={}, points={}, pending={}, ctx_tasks={}, ctx_switches={}, ctx_live_switch={}, demo_a={}, demo_b={}, misses={}, watchdog_trips={}, timer_stall_fallbacks={}, irq_req={}, irq_ckpt={}, irq_forced_attempts={}, irq_forced_blocked={}, irq_forced_succeeded={}, irq_frame_invalid={}, irq_has_rsp={}, irq_rip={:#x}, irq_rsp={:#x}, irq_cs={:#x}, irq_rflags={:#x}",
+            "Preemptive-groundwork: ticks={}, requests={}, points={}, pending={}, ctx_tasks={}, ctx_switches={}, ctx_live_switch={}, demo_a={}, demo_b={}, misses={}, watchdog_trips={}, timer_stall_fallbacks={}, irq_req={}, irq_ckpt={}, irq_forced_attempts={}, irq_forced_blocked={}, irq_forced_succeeded={}, irq_handoff_queued={}, irq_handoff_consumed={}, irq_frame_invalid={}, irq_has_rsp={}, irq_rip={:#x}, irq_rsp={:#x}, irq_cs={:#x}, irq_rflags={:#x}",
             stats.timer_ticks,
             stats.reschedule_requests,
             stats.reschedule_points,
@@ -157,6 +157,8 @@ pub async fn log_scheduler_groundwork() {
             context.irq_forced_attempts,
             context.irq_forced_blocked,
             context.irq_forced_succeeded,
+            context.irq_handoff_queued,
+            context.irq_handoff_consumed,
             context.irq_frame_invalid,
             context.last_irq_has_rsp,
             context.last_irq_rip,
@@ -165,7 +167,7 @@ pub async fn log_scheduler_groundwork() {
             context.last_irq_rflags
         );
         crate::serial_println!(
-            "Preemptive-groundwork: ticks={}, requests={}, points={}, pending={}, ctx_tasks={}, ctx_switches={}, ctx_live_switch={}, demo_a={}, demo_b={}, misses={}, watchdog_trips={}, timer_stall_fallbacks={}, irq_req={}, irq_ckpt={}, irq_forced_attempts={}, irq_forced_blocked={}, irq_forced_succeeded={}, irq_frame_invalid={}, irq_has_rsp={}, irq_rip={:#x}, irq_rsp={:#x}, irq_cs={:#x}, irq_rflags={:#x}",
+            "Preemptive-groundwork: ticks={}, requests={}, points={}, pending={}, ctx_tasks={}, ctx_switches={}, ctx_live_switch={}, demo_a={}, demo_b={}, misses={}, watchdog_trips={}, timer_stall_fallbacks={}, irq_req={}, irq_ckpt={}, irq_forced_attempts={}, irq_forced_blocked={}, irq_forced_succeeded={}, irq_handoff_queued={}, irq_handoff_consumed={}, irq_frame_invalid={}, irq_has_rsp={}, irq_rip={:#x}, irq_rsp={:#x}, irq_cs={:#x}, irq_rflags={:#x}",
             stats.timer_ticks,
             stats.reschedule_requests,
             stats.reschedule_points,
@@ -183,6 +185,8 @@ pub async fn log_scheduler_groundwork() {
             context.irq_forced_attempts,
             context.irq_forced_blocked,
             context.irq_forced_succeeded,
+            context.irq_handoff_queued,
+            context.irq_handoff_consumed,
             context.irq_frame_invalid,
             context.last_irq_has_rsp,
             context.last_irq_rip,

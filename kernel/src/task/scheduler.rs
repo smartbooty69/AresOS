@@ -5,6 +5,7 @@ use alloc::{collections::VecDeque, vec::Vec};
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use lazy_static::lazy_static;
 use spin::Mutex;
+use x86_64::instructions::interrupts;
 
 /// Number of timer ticks per scheduling quantum.
 pub const SCHED_QUANTUM_TICKS: u64 = 5;
@@ -34,9 +35,17 @@ static IRQ_FORCED_SUCCEEDED: AtomicU64 = AtomicU64::new(0);
 static LAST_OBSERVED_TIMER_TICK: AtomicU64 = AtomicU64::new(0);
 static STAGNANT_SPIN_COUNT: AtomicU64 = AtomicU64::new(0);
 static TIMER_STALL_FALLBACKS: AtomicU64 = AtomicU64::new(0);
+static IRQ_HANDOFF_QUEUED: AtomicU64 = AtomicU64::new(0);
+static IRQ_HANDOFF_CONSUMED: AtomicU64 = AtomicU64::new(0);
+static HANDOFF_PENDING: AtomicBool = AtomicBool::new(false);
+static DEMO_CTX_A_PTR: AtomicU64 = AtomicU64::new(0);
+static DEMO_CTX_B_PTR: AtomicU64 = AtomicU64::new(0);
+static DEMO_CURRENT_SLOT: AtomicU64 = AtomicU64::new(0);
+static CONTEXT_SWITCH_ENABLED_ATOMIC: AtomicBool = AtomicBool::new(false);
 
 const CONTEXT_LAB_MAX_STALL_TICKS: u64 = 10_000;
-const CONTEXT_LAB_TIMER_STALL_SPIN_THRESHOLD: u64 = 500_000;
+const CONTEXT_LAB_TIMER_STALL_SPIN_THRESHOLD: u64 = 20_000;
+const CONTEXT_LAB_LOG_INTERVAL: u64 = 50_000;
 
 lazy_static! {
     static ref CONTEXT_SCHEDULER: Mutex<ContextScheduler> = Mutex::new(ContextScheduler::new());
@@ -188,6 +197,8 @@ pub struct ContextSchedulerStats {
     pub irq_forced_blocked: u64,
     pub irq_forced_succeeded: u64,
     pub timer_stall_fallbacks: u64,
+    pub irq_handoff_queued: u64,
+    pub irq_handoff_consumed: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -254,41 +265,61 @@ pub fn try_forced_preempt_from_irq_tail() -> bool {
         return false;
     }
 
-    let maybe_live_switch = {
-        let mut scheduler = match CONTEXT_SCHEDULER.try_lock() {
-            Some(guard) => guard,
-            None => {
-                IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
-                return false;
-            }
-        };
+    if !CONTEXT_SWITCH_ENABLED_ATOMIC.load(Ordering::Relaxed) {
+        IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
+        return false;
+    }
 
-        if !scheduler.switch_enabled() {
-            IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
-            return false;
-        }
+    let ctx_a = DEMO_CTX_A_PTR.load(Ordering::Relaxed);
+    let ctx_b = DEMO_CTX_B_PTR.load(Ordering::Relaxed);
+    if ctx_a == 0 || ctx_b == 0 {
+        IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
+        return false;
+    }
 
-        match scheduler.prepare_live_switch() {
-            Some(pair) => pair,
-            None => {
-                IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
-                return false;
-            }
-        }
+    if HANDOFF_PENDING.load(Ordering::Relaxed) {
+        IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
+        return false;
+    }
+
+    HANDOFF_PENDING.store(true, Ordering::Relaxed);
+    IRQ_HANDOFF_QUEUED.fetch_add(1, Ordering::Relaxed);
+
+    false
+}
+
+fn consume_irq_handoff_token(current_slot: u64) {
+    if !HANDOFF_PENDING.swap(false, Ordering::Relaxed) {
+        return;
+    }
+
+    let ctx_a = DEMO_CTX_A_PTR.load(Ordering::Relaxed);
+    let ctx_b = DEMO_CTX_B_PTR.load(Ordering::Relaxed);
+    let (from_ptr, to_ptr) = if current_slot == 0 {
+        (ctx_a, ctx_b)
+    } else {
+        (ctx_b, ctx_a)
     };
+    if from_ptr == 0 || to_ptr == 0 {
+        IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
+        return;
+    }
 
-    IRQ_PREEMPT_PENDING.store(false, Ordering::Relaxed);
+    IRQ_HANDOFF_CONSUMED.fetch_add(1, Ordering::Relaxed);
+    IRQ_FORCED_SUCCEEDED.fetch_add(1, Ordering::Relaxed);
     IRQ_PREEMPT_CHECKPOINTS.fetch_add(1, Ordering::Relaxed);
     RESCHEDULE_POINTS.fetch_add(1, Ordering::Relaxed);
 
-    let (current, next) = maybe_live_switch;
     unsafe {
-        switch_context(&mut *current, &*next);
+        switch_context(
+            &mut *(from_ptr as usize as *mut CpuContext),
+            &*(to_ptr as usize as *const CpuContext),
+        );
     }
 
-    IRQ_FORCED_SUCCEEDED.fetch_add(1, Ordering::Relaxed);
     LAST_SWITCH_TICK.store(TIMER_TICKS.load(Ordering::Relaxed), Ordering::Relaxed);
-    true
+    IRQ_PREEMPT_PENDING.store(false, Ordering::Relaxed);
+    DEMO_CURRENT_SLOT.store(if current_slot == 0 { 1 } else { 0 }, Ordering::Relaxed);
 }
 
 /// Consume a pending reschedule request.
@@ -307,6 +338,7 @@ pub fn spawn_context_task(name: &'static str, entry: extern "C" fn() -> !) -> us
 
 pub fn set_context_switching_enabled(enabled: bool) {
     CONTEXT_SCHEDULER.lock().set_switch_enabled(enabled);
+    CONTEXT_SWITCH_ENABLED_ATOMIC.store(enabled, Ordering::Relaxed);
 }
 
 pub fn try_context_reschedule() -> bool {
@@ -426,6 +458,8 @@ pub fn context_stats() -> ContextSchedulerStats {
         irq_forced_blocked: IRQ_FORCED_BLOCKED.load(Ordering::Relaxed),
         irq_forced_succeeded: IRQ_FORCED_SUCCEEDED.load(Ordering::Relaxed),
         timer_stall_fallbacks: TIMER_STALL_FALLBACKS.load(Ordering::Relaxed),
+        irq_handoff_queued: IRQ_HANDOFF_QUEUED.load(Ordering::Relaxed),
+        irq_handoff_consumed: IRQ_HANDOFF_CONSUMED.load(Ordering::Relaxed),
     }
 }
 
@@ -440,31 +474,40 @@ pub fn context_task_names() -> Vec<&'static str> {
 
 extern "C" fn demo_context_task_a() -> ! {
     loop {
+        interrupts::enable();
+        DEMO_CURRENT_SLOT.store(0, Ordering::Relaxed);
         let count = DEMO_A_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
-        if count % 250_000 == 0 {
+        if count % CONTEXT_LAB_LOG_INTERVAL == 0 {
             let b = DEMO_B_COUNT.load(Ordering::Relaxed);
             let context = context_stats();
             crate::println!(
-                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}, timer_stall_fallbacks={}",
+                "ContextLab A={}, B={}, ticks={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, handoff_q={}, handoff_c={}, misses={}, timer_stall_fallbacks={}",
                 count,
                 b,
+                stats().timer_ticks,
                 context.switches,
                 context.irq_forced_succeeded,
                 context.irq_forced_blocked,
+                context.irq_handoff_queued,
+                context.irq_handoff_consumed,
                 context.preempt_misses,
                 context.timer_stall_fallbacks
             );
             crate::serial_println!(
-                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}, timer_stall_fallbacks={}",
+                "ContextLab A={}, B={}, ticks={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, handoff_q={}, handoff_c={}, misses={}, timer_stall_fallbacks={}",
                 count,
                 b,
+                stats().timer_ticks,
                 context.switches,
                 context.irq_forced_succeeded,
                 context.irq_forced_blocked,
+                context.irq_handoff_queued,
+                context.irq_handoff_consumed,
                 context.preempt_misses,
                 context.timer_stall_fallbacks
             );
         }
+        consume_irq_handoff_token(0);
         preempt_if_irq_pending();
         context_lab_timer_progress_check();
         context_lab_watchdog_check();
@@ -473,31 +516,40 @@ extern "C" fn demo_context_task_a() -> ! {
 
 extern "C" fn demo_context_task_b() -> ! {
     loop {
+        interrupts::enable();
+        DEMO_CURRENT_SLOT.store(1, Ordering::Relaxed);
         let count = DEMO_B_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
-        if count % 250_000 == 0 {
+        if count % CONTEXT_LAB_LOG_INTERVAL == 0 {
             let a = DEMO_A_COUNT.load(Ordering::Relaxed);
             let context = context_stats();
             crate::println!(
-                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}, timer_stall_fallbacks={}",
+                "ContextLab A={}, B={}, ticks={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, handoff_q={}, handoff_c={}, misses={}, timer_stall_fallbacks={}",
                 a,
                 count,
+                stats().timer_ticks,
                 context.switches,
                 context.irq_forced_succeeded,
                 context.irq_forced_blocked,
+                context.irq_handoff_queued,
+                context.irq_handoff_consumed,
                 context.preempt_misses,
                 context.timer_stall_fallbacks
             );
             crate::serial_println!(
-                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}, timer_stall_fallbacks={}",
+                "ContextLab A={}, B={}, ticks={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, handoff_q={}, handoff_c={}, misses={}, timer_stall_fallbacks={}",
                 a,
                 count,
+                stats().timer_ticks,
                 context.switches,
                 context.irq_forced_succeeded,
                 context.irq_forced_blocked,
+                context.irq_handoff_queued,
+                context.irq_handoff_consumed,
                 context.preempt_misses,
                 context.timer_stall_fallbacks
             );
         }
+        consume_irq_handoff_token(1);
         preempt_if_irq_pending();
         context_lab_timer_progress_check();
         context_lab_watchdog_check();
@@ -512,6 +564,16 @@ pub fn spawn_demo_context_tasks() {
         LAST_SWITCH_TICK.store(TIMER_TICKS.load(Ordering::Relaxed), Ordering::Relaxed);
         spawn_context_task("ctx-demo-a", demo_context_task_a);
         spawn_context_task("ctx-demo-b", demo_context_task_b);
+
+        let (ctx_a, ctx_b) = {
+            let scheduler = CONTEXT_SCHEDULER.lock();
+            let a = &scheduler.tasks[0].runnable.context as *const CpuContext as u64;
+            let b = &scheduler.tasks[1].runnable.context as *const CpuContext as u64;
+            (a, b)
+        };
+        DEMO_CTX_A_PTR.store(ctx_a, Ordering::Relaxed);
+        DEMO_CTX_B_PTR.store(ctx_b, Ordering::Relaxed);
+        DEMO_CURRENT_SLOT.store(0, Ordering::Relaxed);
     }
 }
 
