@@ -104,6 +104,10 @@ The project also serves as a **long-term exploration of operating system enginee
 * bootloader integration
 * basic screen output
 
+Status: ✅ Complete (validated 2026-03-17)
+
+Checklist: `docs/phase-1-checklist.md`
+
 ### Phase 2 — Hardware
 
 * interrupt descriptor table
