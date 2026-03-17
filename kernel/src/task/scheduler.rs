@@ -288,20 +288,8 @@ pub fn try_forced_preempt_from_irq_tail() -> bool {
     false
 }
 
-fn consume_irq_handoff_token(current_slot: u64) {
+fn consume_irq_handoff_token(_current_slot: u64) {
     if !HANDOFF_PENDING.swap(false, Ordering::Relaxed) {
-        return;
-    }
-
-    let ctx_a = DEMO_CTX_A_PTR.load(Ordering::Relaxed);
-    let ctx_b = DEMO_CTX_B_PTR.load(Ordering::Relaxed);
-    let (from_ptr, to_ptr) = if current_slot == 0 {
-        (ctx_a, ctx_b)
-    } else {
-        (ctx_b, ctx_a)
-    };
-    if from_ptr == 0 || to_ptr == 0 {
-        IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
         return;
     }
 
@@ -310,16 +298,37 @@ fn consume_irq_handoff_token(current_slot: u64) {
     IRQ_PREEMPT_CHECKPOINTS.fetch_add(1, Ordering::Relaxed);
     RESCHEDULE_POINTS.fetch_add(1, Ordering::Relaxed);
 
-    unsafe {
-        switch_context(
-            &mut *(from_ptr as usize as *mut CpuContext),
-            &*(to_ptr as usize as *const CpuContext),
-        );
+    // Route through the scheduler's prepare_live_switch() so that
+    // CONTEXT_SCHEDULER.current stays in sync with the actual running task.
+    //
+    // The old raw-pointer path (DEMO_CTX_A_PTR / DEMO_CTX_B_PTR) bypassed
+    // next_pair(), leaving CONTEXT_SCHEDULER.current pointing at task-A even
+    // while task-B was running.  The next try_context_reschedule() call from
+    // B's loop would therefore see current=0(A), pick next=1(B), and call
+    // switch_context(&mut tasks[0], &tasks[1]) — saving B's live registers
+    // into A's context slot and "restoring" B from its stale entry-point.
+    // That corrupted A's saved context, reset B to its creation state, and
+    // made HANDOFF_PENDING permanently unproductive (handoff_queued stalled
+    // at 1 forever).
+    let maybe_switch = {
+        let mut sched = CONTEXT_SCHEDULER.lock();
+        if sched.switch_enabled() {
+            sched.prepare_live_switch()
+        } else {
+            None
+        }
+    };
+
+    if let Some((current, next)) = maybe_switch {
+        unsafe {
+            switch_context(&mut *current, &*next);
+        }
+        LAST_SWITCH_TICK.store(TIMER_TICKS.load(Ordering::Relaxed), Ordering::Relaxed);
+    } else {
+        IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
     }
 
-    LAST_SWITCH_TICK.store(TIMER_TICKS.load(Ordering::Relaxed), Ordering::Relaxed);
     IRQ_PREEMPT_PENDING.store(false, Ordering::Relaxed);
-    DEMO_CURRENT_SLOT.store(if current_slot == 0 { 1 } else { 0 }, Ordering::Relaxed);
 }
 
 /// Consume a pending reschedule request.

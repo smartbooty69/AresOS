@@ -39,8 +39,9 @@
 
 ### Wrapper-Mode IRQ Degradation (Experimental Feature)
 - **Issue**: Under `irq-exit-wrapper-experimental` feature, after first context hop, timer IRQ flow to the scheduler stops (handoff_queued stalls at 1).
-- **Assessment**: Likely deep in low-level wrapper return path or IRQ dispatch desynchronization. Mitigated by fallback switches but not root-caused.
-- **Status**: Observable but acceptable. Main scheduler path remains unaffected.
+- **Root cause (resolved)**: `consume_irq_handoff_token` performed a raw pointer switch via `DEMO_CTX_A_PTR`/`DEMO_CTX_B_PTR` without calling `next_pair()`, so `CONTEXT_SCHEDULER.current` remained pointing at task-A while task-B was actually running. The next `try_context_reschedule()` call from B's loop saw `current=0(A)`, picked `next=1(B)`, and invoked `switch_context(&mut tasks[0], &tasks[1])` — saving B's live registers *into A's context slot* and jumping to B's stale creation-time entry point. A's saved context was permanently clobbered, B was reset on every handoff attempt, and `HANDOFF_PENDING` could never be consumed cleanly, so `IRQ_HANDOFF_QUEUED` stalled at 1.
+- **Fix**: `consume_irq_handoff_token` now routes the switch through `CONTEXT_SCHEDULER.lock().prepare_live_switch()`, keeping scheduler state in sync with the actual running task. The `DEMO_CURRENT_SLOT` post-switch store was also removed (each task already sets it at the top of its own loop).
+- **Status**: ✅ Resolved.
 
 ### One-Way Handoff Scenarios
 - **Historical**: Earlier token iterations could queue no-op or self-targeting handoffs, causing one-task starvation.

@@ -39,6 +39,18 @@ Full preemptive scheduling with process isolation is a Phase 5 / 6 target.
 - Last full validation command: `cargo test -p kernel`
 - Result: all 27 tests pass (16 unit + 11 integration)
 
+## Phase 4 Exit Gate (Wrapper-Mode Soak)
+- Command: `./scripts/phase4-soak-check`
+- Purpose: guard against regression of the wrapper-mode IRQ handoff stall.
+- Pass criteria:
+  - Captures at least the script minimum number of `ContextLab` samples
+  - `ticks`, `switches`, and both task counters (`A`, `B`) advance
+  - `handoff_q` and `handoff_c` both advance and remain equal at end of run
+  - `misses` does not increase during the soak window
+- Optional tuning:
+  - `./scripts/phase4-soak-check --duration 120 --min-samples 10`
+  - Increase duration for pre-merge or release-candidate verification
+
 ## Notes
 - `irq-exit-preempt-experimental` and `irq-exit-wrapper-experimental` feature
   flags exist for future IRQ-exit preemption work; disabled by default.

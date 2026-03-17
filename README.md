@@ -217,6 +217,12 @@ Run tests (unit + integration under QEMU):
 cargo test -p kernel
 ```
 
+Run Phase 4 wrapper-mode preemption soak check:
+
+```
+./scripts/phase4-soak-check
+```
+
 ---
 
 # Vision
