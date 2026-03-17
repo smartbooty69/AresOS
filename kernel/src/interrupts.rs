@@ -163,6 +163,7 @@ extern "x86-interrupt" fn timer_interrupt_handler(stack_frame: InterruptStackFra
         stack_frame.stack_pointer.as_u64(),
     );
     crate::task::scheduler::on_timer_tick();
+    let _ = crate::task::scheduler::try_forced_preempt_from_irq_tail();
     crate::task::timer::notify_tick();
     unsafe {
         PICS.lock()

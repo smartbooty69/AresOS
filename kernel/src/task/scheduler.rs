@@ -24,6 +24,8 @@ static IRQ_PREEMPT_REQUESTS: AtomicU64 = AtomicU64::new(0);
 static IRQ_PREEMPT_CHECKPOINTS: AtomicU64 = AtomicU64::new(0);
 static LAST_IRQ_RIP: AtomicU64 = AtomicU64::new(0);
 static LAST_IRQ_RSP: AtomicU64 = AtomicU64::new(0);
+static IRQ_FORCED_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
+static IRQ_FORCED_BLOCKED: AtomicU64 = AtomicU64::new(0);
 
 const CONTEXT_LAB_MAX_STALL_TICKS: u64 = 10_000;
 
@@ -169,6 +171,8 @@ pub struct ContextSchedulerStats {
     pub irq_preempt_checkpoints: u64,
     pub last_irq_rip: u64,
     pub last_irq_rsp: u64,
+    pub irq_forced_attempts: u64,
+    pub irq_forced_blocked: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -197,6 +201,21 @@ pub fn on_timer_tick() {
 pub fn on_timer_interrupt_context(interrupted_rip: u64, interrupted_rsp: u64) {
     LAST_IRQ_RIP.store(interrupted_rip, Ordering::Relaxed);
     LAST_IRQ_RSP.store(interrupted_rsp, Ordering::Relaxed);
+}
+
+/// IRQ-tail preemption hook.
+///
+/// Currently this only records telemetry because forced context switches
+/// directly from `extern "x86-interrupt"` handlers require a custom low-level
+/// interrupt return path.
+pub fn try_forced_preempt_from_irq_tail() -> bool {
+    if !IRQ_PREEMPT_PENDING.load(Ordering::Relaxed) {
+        return false;
+    }
+
+    IRQ_FORCED_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+    IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
+    false
 }
 
 /// Consume a pending reschedule request.
@@ -304,6 +323,8 @@ pub fn context_stats() -> ContextSchedulerStats {
         irq_preempt_checkpoints: IRQ_PREEMPT_CHECKPOINTS.load(Ordering::Relaxed),
         last_irq_rip: LAST_IRQ_RIP.load(Ordering::Relaxed),
         last_irq_rsp: LAST_IRQ_RSP.load(Ordering::Relaxed),
+        irq_forced_attempts: IRQ_FORCED_ATTEMPTS.load(Ordering::Relaxed),
+        irq_forced_blocked: IRQ_FORCED_BLOCKED.load(Ordering::Relaxed),
     }
 }
 

@@ -22,9 +22,10 @@ cargo run -p kernel --features context-lab
 - timer IRQ requests reschedule every scheduler quantum
 - timer IRQ records interrupted RIP/RSP for scheduler telemetry
 - context handoff occurs at deferred checkpoints when pending IRQ preemption is observed
+- timer IRQ tail preempt hook records forced-preempt attempts/blocks (telemetry-only at this stage)
 - log output includes lines like:
   - `ContextLab A=..., B=...`
-  - `Preemptive-groundwork: ... misses=..., watchdog_trips=..., irq_req=..., irq_ckpt=...`
+  - `Preemptive-groundwork: ... misses=..., watchdog_trips=..., irq_req=..., irq_ckpt=..., irq_forced_attempts=..., irq_forced_blocked=...`
 
 ## Notes
 
