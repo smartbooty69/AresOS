@@ -31,8 +31,12 @@ static IRQ_FRAME_INVALID: AtomicU64 = AtomicU64::new(0);
 static IRQ_FORCED_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 static IRQ_FORCED_BLOCKED: AtomicU64 = AtomicU64::new(0);
 static IRQ_FORCED_SUCCEEDED: AtomicU64 = AtomicU64::new(0);
+static LAST_OBSERVED_TIMER_TICK: AtomicU64 = AtomicU64::new(0);
+static STAGNANT_SPIN_COUNT: AtomicU64 = AtomicU64::new(0);
+static TIMER_STALL_FALLBACKS: AtomicU64 = AtomicU64::new(0);
 
 const CONTEXT_LAB_MAX_STALL_TICKS: u64 = 10_000;
+const CONTEXT_LAB_TIMER_STALL_SPIN_THRESHOLD: u64 = 500_000;
 
 lazy_static! {
     static ref CONTEXT_SCHEDULER: Mutex<ContextScheduler> = Mutex::new(ContextScheduler::new());
@@ -183,6 +187,7 @@ pub struct ContextSchedulerStats {
     pub irq_forced_attempts: u64,
     pub irq_forced_blocked: u64,
     pub irq_forced_succeeded: u64,
+    pub timer_stall_fallbacks: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -360,6 +365,22 @@ fn context_lab_watchdog_check() {
     }
 }
 
+fn context_lab_timer_progress_check() {
+    let now = TIMER_TICKS.load(Ordering::Relaxed);
+    let last = LAST_OBSERVED_TIMER_TICK.swap(now, Ordering::Relaxed);
+
+    if now == last {
+        let stagnant = STAGNANT_SPIN_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        if stagnant >= CONTEXT_LAB_TIMER_STALL_SPIN_THRESHOLD {
+            STAGNANT_SPIN_COUNT.store(0, Ordering::Relaxed);
+            TIMER_STALL_FALLBACKS.fetch_add(1, Ordering::Relaxed);
+            yield_now();
+        }
+    } else {
+        STAGNANT_SPIN_COUNT.store(0, Ordering::Relaxed);
+    }
+}
+
 fn is_canonical_address(addr: u64) -> bool {
     let sign = (addr >> 47) & 1;
     let upper = addr >> 48;
@@ -404,6 +425,7 @@ pub fn context_stats() -> ContextSchedulerStats {
         irq_forced_attempts: IRQ_FORCED_ATTEMPTS.load(Ordering::Relaxed),
         irq_forced_blocked: IRQ_FORCED_BLOCKED.load(Ordering::Relaxed),
         irq_forced_succeeded: IRQ_FORCED_SUCCEEDED.load(Ordering::Relaxed),
+        timer_stall_fallbacks: TIMER_STALL_FALLBACKS.load(Ordering::Relaxed),
     }
 }
 
@@ -423,25 +445,28 @@ extern "C" fn demo_context_task_a() -> ! {
             let b = DEMO_B_COUNT.load(Ordering::Relaxed);
             let context = context_stats();
             crate::println!(
-                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}",
+                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}, timer_stall_fallbacks={}",
                 count,
                 b,
                 context.switches,
                 context.irq_forced_succeeded,
                 context.irq_forced_blocked,
-                context.preempt_misses
+                context.preempt_misses,
+                context.timer_stall_fallbacks
             );
             crate::serial_println!(
-                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}",
+                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}, timer_stall_fallbacks={}",
                 count,
                 b,
                 context.switches,
                 context.irq_forced_succeeded,
                 context.irq_forced_blocked,
-                context.preempt_misses
+                context.preempt_misses,
+                context.timer_stall_fallbacks
             );
         }
         preempt_if_irq_pending();
+        context_lab_timer_progress_check();
         context_lab_watchdog_check();
     }
 }
@@ -453,25 +478,28 @@ extern "C" fn demo_context_task_b() -> ! {
             let a = DEMO_A_COUNT.load(Ordering::Relaxed);
             let context = context_stats();
             crate::println!(
-                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}",
+                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}, timer_stall_fallbacks={}",
                 a,
                 count,
                 context.switches,
                 context.irq_forced_succeeded,
                 context.irq_forced_blocked,
-                context.preempt_misses
+                context.preempt_misses,
+                context.timer_stall_fallbacks
             );
             crate::serial_println!(
-                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}",
+                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}, timer_stall_fallbacks={}",
                 a,
                 count,
                 context.switches,
                 context.irq_forced_succeeded,
                 context.irq_forced_blocked,
-                context.preempt_misses
+                context.preempt_misses,
+                context.timer_stall_fallbacks
             );
         }
         preempt_if_irq_pending();
+        context_lab_timer_progress_check();
         context_lab_watchdog_check();
     }
 }
