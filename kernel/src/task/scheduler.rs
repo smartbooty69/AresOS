@@ -26,6 +26,7 @@ static LAST_IRQ_RIP: AtomicU64 = AtomicU64::new(0);
 static LAST_IRQ_RSP: AtomicU64 = AtomicU64::new(0);
 static IRQ_FORCED_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 static IRQ_FORCED_BLOCKED: AtomicU64 = AtomicU64::new(0);
+static IRQ_FORCED_SUCCEEDED: AtomicU64 = AtomicU64::new(0);
 
 const CONTEXT_LAB_MAX_STALL_TICKS: u64 = 10_000;
 
@@ -173,6 +174,7 @@ pub struct ContextSchedulerStats {
     pub last_irq_rsp: u64,
     pub irq_forced_attempts: u64,
     pub irq_forced_blocked: u64,
+    pub irq_forced_succeeded: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -214,8 +216,47 @@ pub fn try_forced_preempt_from_irq_tail() -> bool {
     }
 
     IRQ_FORCED_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
-    IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
-    false
+
+    if !cfg!(feature = "irq-exit-preempt-experimental") {
+        IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
+        return false;
+    }
+
+    let maybe_live_switch = {
+        let mut scheduler = match CONTEXT_SCHEDULER.try_lock() {
+            Some(guard) => guard,
+            None => {
+                IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
+                return false;
+            }
+        };
+
+        if !scheduler.switch_enabled() {
+            IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
+            return false;
+        }
+
+        match scheduler.prepare_live_switch() {
+            Some(pair) => pair,
+            None => {
+                IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
+                return false;
+            }
+        }
+    };
+
+    IRQ_PREEMPT_PENDING.store(false, Ordering::Relaxed);
+    IRQ_PREEMPT_CHECKPOINTS.fetch_add(1, Ordering::Relaxed);
+    RESCHEDULE_POINTS.fetch_add(1, Ordering::Relaxed);
+
+    let (current, next) = maybe_live_switch;
+    unsafe {
+        switch_context(&mut *current, &*next);
+    }
+
+    IRQ_FORCED_SUCCEEDED.fetch_add(1, Ordering::Relaxed);
+    LAST_SWITCH_TICK.store(TIMER_TICKS.load(Ordering::Relaxed), Ordering::Relaxed);
+    true
 }
 
 /// Consume a pending reschedule request.
@@ -325,6 +366,7 @@ pub fn context_stats() -> ContextSchedulerStats {
         last_irq_rsp: LAST_IRQ_RSP.load(Ordering::Relaxed),
         irq_forced_attempts: IRQ_FORCED_ATTEMPTS.load(Ordering::Relaxed),
         irq_forced_blocked: IRQ_FORCED_BLOCKED.load(Ordering::Relaxed),
+        irq_forced_succeeded: IRQ_FORCED_SUCCEEDED.load(Ordering::Relaxed),
     }
 }
 

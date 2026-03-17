@@ -139,7 +139,7 @@ pub async fn log_scheduler_groundwork() {
         let stats = crate::task::scheduler::stats();
         let context = crate::task::scheduler::context_stats();
         println!(
-            "Preemptive-groundwork: ticks={}, requests={}, points={}, pending={}, ctx_tasks={}, ctx_switches={}, ctx_live_switch={}, demo_a={}, demo_b={}, misses={}, watchdog_trips={}, irq_req={}, irq_ckpt={}, irq_forced_attempts={}, irq_forced_blocked={}, irq_rip={:#x}, irq_rsp={:#x}",
+            "Preemptive-groundwork: ticks={}, requests={}, points={}, pending={}, ctx_tasks={}, ctx_switches={}, ctx_live_switch={}, demo_a={}, demo_b={}, misses={}, watchdog_trips={}, irq_req={}, irq_ckpt={}, irq_forced_attempts={}, irq_forced_blocked={}, irq_forced_succeeded={}, irq_rip={:#x}, irq_rsp={:#x}",
             stats.timer_ticks,
             stats.reschedule_requests,
             stats.reschedule_points,
@@ -155,6 +155,7 @@ pub async fn log_scheduler_groundwork() {
             context.irq_preempt_checkpoints,
             context.irq_forced_attempts,
             context.irq_forced_blocked,
+            context.irq_forced_succeeded,
             context.last_irq_rip,
             context.last_irq_rsp
         );

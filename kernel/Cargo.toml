@@ -17,6 +17,7 @@ doctest = false
 default = []
 live-context-switch = []
 context-lab = ["live-context-switch"]
+irq-exit-preempt-experimental = ["context-lab"]
 
 [dependencies]
 bootloader = { version = "0.9", features = ["map_physical_memory"] }

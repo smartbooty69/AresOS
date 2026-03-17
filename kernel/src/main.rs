@@ -43,11 +43,13 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     let context_lab_mode = cfg!(feature = "context-lab");
     let live_context_switch = cfg!(feature = "live-context-switch");
+    let irq_exit_preempt_experimental = cfg!(feature = "irq-exit-preempt-experimental");
     kernel::task::scheduler::set_context_switching_enabled(live_context_switch);
     kernel::task::scheduler::spawn_demo_context_tasks();
     println!(
-        "Context demo tasks registered (live switch mode: {}).",
-        live_context_switch
+        "Context demo tasks registered (live switch mode: {}, irq-exit preempt experimental: {}).",
+        live_context_switch,
+        irq_exit_preempt_experimental
     );
 
     if context_lab_mode {
