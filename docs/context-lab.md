@@ -14,6 +14,12 @@
 cargo run -p kernel --features context-lab
 ```
 
+Run with low-level timer IRQ wrapper experiment:
+
+```bash
+cargo run -p kernel --features irq-exit-wrapper-experimental
+```
+
 ## Behavior
 
 - async executor tasks are skipped in lab mode
@@ -23,6 +29,7 @@ cargo run -p kernel --features context-lab
 - timer IRQ records interrupted RIP/RSP for scheduler telemetry
 - context handoff occurs at deferred checkpoints when pending IRQ preemption is observed
 - timer IRQ tail preempt hook records forced-preempt attempts/blocks (telemetry-only at this stage)
+- optional low-level IRQ wrapper path can replace the timer interrupt entry/return sequence (experimental)
 - log output includes lines like:
   - `ContextLab A=..., B=...`
   - `Preemptive-groundwork: ... misses=..., watchdog_trips=..., irq_req=..., irq_ckpt=..., irq_forced_attempts=..., irq_forced_blocked=...`
