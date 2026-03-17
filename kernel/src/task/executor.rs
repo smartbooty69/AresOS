@@ -18,7 +18,12 @@ use spin::Mutex;
 /// Maximum number of wake notifications that can be queued simultaneously.
 const WAKE_QUEUE_SIZE: usize = 100;
 
+/// Number of timer ticks between per-task fairness preemption checks.
+/// Even if a task remains ready, another task gets a chance to run.
+const FAIRNESS_CHECK_INTERVAL_TICKS: u64 = 10;
+
 static ACTIVE_TASKS: AtomicUsize = AtomicUsize::new(0);
+static LAST_FAIRNESS_CHECK_TICK: AtomicUsize = AtomicUsize::new(0);
 static SLEEPING_TASKS: AtomicUsize = AtomicUsize::new(0);
 static READY_QUEUE_DEPTH: AtomicUsize = AtomicUsize::new(0);
 static COMPLETED_TASKS: AtomicUsize = AtomicUsize::new(0);
@@ -158,6 +163,17 @@ impl Executor {
                         entry.state_since_tick = TICK_COUNTER.load(Ordering::Relaxed);
                     }
                     SLEEPING_TASKS.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+
+            // Fairness checkpoint: periodically break to allow other ready tasks a chance to run
+            let now = TICK_COUNTER.load(Ordering::Relaxed) as usize;
+            let last_check = LAST_FAIRNESS_CHECK_TICK.load(Ordering::Relaxed);
+            if now.saturating_sub(last_check) >= FAIRNESS_CHECK_INTERVAL_TICKS as usize {
+                LAST_FAIRNESS_CHECK_TICK.store(now, Ordering::Relaxed);
+                if !task_queue.is_empty() {
+                    // Other tasks are ready, give them a chance
+                    break;
                 }
             }
         }
