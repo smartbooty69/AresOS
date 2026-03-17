@@ -6,6 +6,10 @@
 //!   any kernel code.
 
 use core::sync::atomic::{AtomicU64, Ordering};
+use crate::{
+    performance::process_metrics::ProcessMetricsGlobal,
+    task::scheduler,
+};
 
 /// Global timer-tick counter, incremented by the PIT IRQ handler.
 pub static TICK_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -26,6 +30,12 @@ pub struct PerformanceCounters {
     tsc: u64,
     /// Number of PIT timer ticks at the time the snapshot was taken.
     timer_ticks: u64,
+    /// Total number of successful preemptions.
+    total_preemptions: u64,
+    /// Number of times scheduler lock acquisition observed contention.
+    scheduler_lock_contention: u64,
+    /// Number of fairness violations detected by runtime observers.
+    fairness_violations: u64,
 }
 
 impl PerformanceCounters {
@@ -34,7 +44,15 @@ impl PerformanceCounters {
         // Serialise the TSC read to prevent out-of-order execution.
         let tsc = rdtsc_serialised();
         let timer_ticks = TICK_COUNTER.load(Ordering::Relaxed);
-        Self { tsc, timer_ticks }
+        let (_, _, total_preemptions, fairness_violations) = ProcessMetricsGlobal::global_snapshot();
+        let scheduler_lock_contention = scheduler::scheduler_lock_contention();
+        Self {
+            tsc,
+            timer_ticks,
+            total_preemptions,
+            scheduler_lock_contention,
+            fairness_violations,
+        }
     }
 
     /// Return the raw TSC value from this snapshot.
@@ -45,6 +63,18 @@ impl PerformanceCounters {
     /// Return the timer-tick count from this snapshot.
     pub fn ticks(&self) -> u64 {
         self.timer_ticks
+    }
+
+    pub fn total_preemptions(&self) -> u64 {
+        self.total_preemptions
+    }
+
+    pub fn scheduler_lock_contention(&self) -> u64 {
+        self.scheduler_lock_contention
+    }
+
+    pub fn fairness_violations(&self) -> u64 {
+        self.fairness_violations
     }
 
     /// Estimate the CPU clock frequency in MHz.

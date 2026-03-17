@@ -6,6 +6,7 @@
 pub mod context;
 pub mod executor;
 pub mod keyboard;
+pub mod process;
 pub mod scheduler;
 pub mod timer;
 

@@ -2,6 +2,7 @@
 
 use super::context::{switch_context, CpuContext, RunnableContext};
 use alloc::{collections::VecDeque, vec::Vec};
+use crate::performance::process_metrics::{self, EventType, ProcessMetricsGlobal};
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -17,6 +18,11 @@ static RESCHEDULE_POINTS: AtomicU64 = AtomicU64::new(0);
 static DEMO_CONTEXT_TASKS_SPAWNED: AtomicBool = AtomicBool::new(false);
 static DEMO_A_COUNT: AtomicU64 = AtomicU64::new(0);
 static DEMO_B_COUNT: AtomicU64 = AtomicU64::new(0);
+// Phase 5: Independent multi-task counters for fairness testing
+static KERNEL_TASK_1_COUNT: AtomicU64 = AtomicU64::new(0);
+static KERNEL_TASK_2_COUNT: AtomicU64 = AtomicU64::new(0);
+static KERNEL_TASK_3_COUNT: AtomicU64 = AtomicU64::new(0);
+static KERNEL_TASK_4_COUNT: AtomicU64 = AtomicU64::new(0);
 static PREEMPT_MISSES: AtomicU64 = AtomicU64::new(0);
 static LAST_SWITCH_TICK: AtomicU64 = AtomicU64::new(0);
 static WATCHDOG_TRIPS: AtomicU64 = AtomicU64::new(0);
@@ -42,6 +48,7 @@ static DEMO_CTX_A_PTR: AtomicU64 = AtomicU64::new(0);
 static DEMO_CTX_B_PTR: AtomicU64 = AtomicU64::new(0);
 static DEMO_CURRENT_SLOT: AtomicU64 = AtomicU64::new(0);
 static CONTEXT_SWITCH_ENABLED_ATOMIC: AtomicBool = AtomicBool::new(false);
+static SCHEDULER_LOCK_CONTENTION: AtomicU64 = AtomicU64::new(0);
 
 const CONTEXT_LAB_MAX_STALL_TICKS: u64 = 10_000;
 const CONTEXT_LAB_TIMER_STALL_SPIN_THRESHOLD: u64 = 20_000;
@@ -51,9 +58,25 @@ lazy_static! {
     static ref CONTEXT_SCHEDULER: Mutex<ContextScheduler> = Mutex::new(ContextScheduler::new());
 }
 
+/// Per-task performance metrics for preemptive scheduling.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TaskMetrics {
+    /// Context switches for this task (times preempted or voluntarily yielded).
+    pub switches: u64,
+    /// CPU time accounted in scheduler ticks.
+    pub cpu_ticks: u64,
+    /// Tick when this task was created.
+    pub created_tick: u64,
+    /// Preemption attempts on this task from IRQ context.
+    pub preemption_attempts: u64,
+    /// Successful preemptions of this task.
+    pub preemption_successes: u64,
+}
+
 struct ContextTask {
     name: &'static str,
     runnable: RunnableContext,
+    metrics: TaskMetrics,
 }
 
 struct ContextScheduler {
@@ -62,6 +85,7 @@ struct ContextScheduler {
     current: Option<usize>,
     switches: u64,
     switch_enabled: bool,
+    last_switch_tick: u64,
 }
 
 impl ContextScheduler {
@@ -72,6 +96,7 @@ impl ContextScheduler {
             current: None,
             switches: 0,
             switch_enabled: false,
+            last_switch_tick: 0,
         }
     }
 
@@ -80,6 +105,13 @@ impl ContextScheduler {
         self.tasks.push(ContextTask {
             name,
             runnable: RunnableContext::new(entry),
+            metrics: TaskMetrics {
+                switches: 0,
+                cpu_ticks: 0,
+                created_tick: TIMER_TICKS.load(Ordering::Relaxed),
+                preemption_attempts: 0,
+                preemption_successes: 0,
+            },
         });
         self.ready_queue.push_back(id);
         id
@@ -121,6 +153,20 @@ impl ContextScheduler {
             return None;
         }
 
+        let now_tick = TIMER_TICKS.load(Ordering::Relaxed);
+        let elapsed = now_tick.saturating_sub(self.last_switch_tick);
+        if elapsed > 0 {
+            self.update_cpu_ticks(elapsed);
+        }
+
+        // Record context switch on current task
+        self.tasks[current].metrics.switches = self.tasks[current].metrics.switches.saturating_add(1);
+        self.tasks[current].metrics.preemption_successes = 
+            self.tasks[current].metrics.preemption_successes.saturating_add(1);
+
+        // Record context switch on next task
+        self.tasks[next].metrics.switches = self.tasks[next].metrics.switches.saturating_add(1);
+
         let (current_ctx, next_ctx) = if current < next {
             let (left, right) = self.tasks.split_at_mut(next);
             (
@@ -136,7 +182,17 @@ impl ContextScheduler {
         };
 
         self.switches = self.switches.saturating_add(1);
+        self.last_switch_tick = now_tick;
         Some((current_ctx as *mut CpuContext, next_ctx as *const CpuContext))
+    }
+
+    fn update_cpu_ticks(&mut self, ticks: u64) {
+        if let Some(current) = self.current {
+            if current < self.tasks.len() {
+                self.tasks[current].metrics.cpu_ticks = 
+                    self.tasks[current].metrics.cpu_ticks.saturating_add(ticks);
+            }
+        }
     }
 
     fn first_context(&mut self) -> Option<*const CpuContext> {
@@ -174,6 +230,26 @@ impl ContextScheduler {
     fn switch_enabled(&self) -> bool {
         self.switch_enabled
     }
+
+    fn get_task_metrics(&self, id: usize) -> Option<TaskMetrics> {
+        self.tasks.get(id).map(|task| task.metrics)
+    }
+
+    fn get_all_task_metrics(&self) -> Vec<(usize, &'static str, TaskMetrics)> {
+        self.tasks
+            .iter()
+            .enumerate()
+            .map(|(id, task)| (id, task.name, task.metrics))
+            .collect()
+    }
+}
+
+fn lock_context_scheduler() -> spin::MutexGuard<'static, ContextScheduler> {
+    if let Some(guard) = CONTEXT_SCHEDULER.try_lock() {
+        return guard;
+    }
+    SCHEDULER_LOCK_CONTENTION.fetch_add(1, Ordering::Relaxed);
+    CONTEXT_SCHEDULER.lock()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -342,17 +418,27 @@ pub fn record_reschedule_point() {
 }
 
 pub fn spawn_context_task(name: &'static str, entry: extern "C" fn() -> !) -> usize {
-    CONTEXT_SCHEDULER.lock().spawn(name, entry)
+    lock_context_scheduler().spawn(name, entry)
 }
 
 pub fn set_context_switching_enabled(enabled: bool) {
-    CONTEXT_SCHEDULER.lock().set_switch_enabled(enabled);
+    lock_context_scheduler().set_switch_enabled(enabled);
     CONTEXT_SWITCH_ENABLED_ATOMIC.store(enabled, Ordering::Relaxed);
+}
+
+/// Get metrics for a specific task by ID.
+pub fn get_task_metrics(id: usize) -> Option<TaskMetrics> {
+    lock_context_scheduler().get_task_metrics(id)
+}
+
+/// Get metrics for all context tasks.
+pub fn get_all_task_metrics() -> Vec<(usize, &'static str, TaskMetrics)> {
+    lock_context_scheduler().get_all_task_metrics()
 }
 
 pub fn try_context_reschedule() -> bool {
     let maybe_live_switch = {
-        let mut scheduler = CONTEXT_SCHEDULER.lock();
+        let mut scheduler = lock_context_scheduler();
         if scheduler.switch_enabled() {
             scheduler.prepare_live_switch()
         } else {
@@ -368,6 +454,8 @@ pub fn try_context_reschedule() -> bool {
     unsafe {
         switch_context(&mut *current, &*next);
     }
+    ProcessMetricsGlobal::record_preemption();
+    process_metrics::log_event(EventType::Preempted, 0);
     true
 }
 
@@ -445,7 +533,7 @@ pub fn run_context_lab() -> ! {
 }
 
 pub fn context_stats() -> ContextSchedulerStats {
-    let scheduler = CONTEXT_SCHEDULER.lock();
+    let scheduler = lock_context_scheduler();
     let (demo_a_count, demo_b_count) = scheduler.demo_counts();
     ContextSchedulerStats {
         tasks: scheduler.context_task_count(),
@@ -473,8 +561,7 @@ pub fn context_stats() -> ContextSchedulerStats {
 }
 
 pub fn context_task_names() -> Vec<&'static str> {
-    CONTEXT_SCHEDULER
-        .lock()
+    lock_context_scheduler()
         .tasks
         .iter()
         .map(|task| task.name)
@@ -565,6 +652,47 @@ extern "C" fn demo_context_task_b() -> ! {
     }
 }
 
+// Phase 5: Independent kernel task entry points for fairness testing
+extern "C" fn kernel_task_1() -> ! {
+    const LOG_INTERVAL: u64 = 100_000;
+    let mut local_count = 0u64;
+    loop {
+        interrupts::enable();
+        increment_kernel_task_counter(1);
+        local_count += 1;
+        if local_count % LOG_INTERVAL == 0 {
+            let counters = get_kernel_task_counters();
+            crate::println!("Phase5-Fairness: T1={}, T2={}, T3={}, T4={}", 
+                counters[0], counters[1], counters[2], counters[3]);
+        }
+        preempt_if_irq_pending();
+    }
+}
+
+extern "C" fn kernel_task_2() -> ! {
+    loop {
+        interrupts::enable();
+        increment_kernel_task_counter(2);
+        preempt_if_irq_pending();
+    }
+}
+
+extern "C" fn kernel_task_3() -> ! {
+    loop {
+        interrupts::enable();
+        increment_kernel_task_counter(3);
+        preempt_if_irq_pending();
+    }
+}
+
+extern "C" fn kernel_task_4() -> ! {
+    loop {
+        interrupts::enable();
+        increment_kernel_task_counter(4);
+        preempt_if_irq_pending();
+    }
+}
+
 pub fn spawn_demo_context_tasks() {
     if DEMO_CONTEXT_TASKS_SPAWNED
         .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
@@ -575,7 +703,7 @@ pub fn spawn_demo_context_tasks() {
         spawn_context_task("ctx-demo-b", demo_context_task_b);
 
         let (ctx_a, ctx_b) = {
-            let scheduler = CONTEXT_SCHEDULER.lock();
+            let scheduler = lock_context_scheduler();
             let a = &scheduler.tasks[0].runnable.context as *const CpuContext as u64;
             let b = &scheduler.tasks[1].runnable.context as *const CpuContext as u64;
             (a, b)
@@ -597,6 +725,38 @@ pub fn stats() -> SchedulerStats {
         context_switches: context.switches,
         context_switching_enabled: context.switching_enabled,
     }
+}
+
+// Phase 5: Public accessors for multi-task fairness testing
+pub fn get_kernel_task_counters() -> [u64; 4] {
+    [
+        KERNEL_TASK_1_COUNT.load(Ordering::Relaxed),
+        KERNEL_TASK_2_COUNT.load(Ordering::Relaxed),
+        KERNEL_TASK_3_COUNT.load(Ordering::Relaxed),
+        KERNEL_TASK_4_COUNT.load(Ordering::Relaxed),
+    ]
+}
+
+pub fn increment_kernel_task_counter(task_id: usize) -> u64 {
+    match task_id {
+        1 => KERNEL_TASK_1_COUNT.fetch_add(1, Ordering::Relaxed),
+        2 => KERNEL_TASK_2_COUNT.fetch_add(1, Ordering::Relaxed),
+        3 => KERNEL_TASK_3_COUNT.fetch_add(1, Ordering::Relaxed),
+        4 => KERNEL_TASK_4_COUNT.fetch_add(1, Ordering::Relaxed),
+        _ => 0,
+    }
+}
+
+/// Phase 5: Spawn 4 independent kernel tasks for fairness testing.
+pub fn spawn_kernel_tasks_phase5() {
+    spawn_context_task("kernel-task-1", kernel_task_1);
+    spawn_context_task("kernel-task-2", kernel_task_2);
+    spawn_context_task("kernel-task-3", kernel_task_3);
+    spawn_context_task("kernel-task-4", kernel_task_4);
+}
+
+pub fn scheduler_lock_contention() -> u64 {
+    SCHEDULER_LOCK_CONTENTION.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]

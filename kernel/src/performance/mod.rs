@@ -4,6 +4,7 @@
 //! profiler for measuring kernel subsystem latencies.
 
 pub mod metrics;
+pub mod process_metrics;
 pub mod profiler;
 
 pub use metrics::PerformanceCounters;

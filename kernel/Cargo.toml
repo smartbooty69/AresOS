@@ -15,6 +15,9 @@ doctest = false
 
 [features]
 default = []
+# Production preemptive scheduling (Phase 5+)
+preemption = []
+# Deprecated experimental flags (kept for backward compatibility; use `preemption` instead)
 live-context-switch = []
 context-lab = ["live-context-switch"]
 irq-exit-preempt-experimental = ["context-lab"]

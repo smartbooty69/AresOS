@@ -2,7 +2,10 @@
 //!
 //! This module lets tasks sleep for a duration without busy waiting.
 
-use crate::{performance::metrics::TICK_COUNTER, println};
+use crate::{
+    performance::{metrics::TICK_COUNTER, process_metrics::{self, EventType, ProcessMetricsGlobal}},
+    println,
+};
 use core::{
     future::Future,
     pin::Pin,
@@ -194,6 +197,36 @@ pub async fn log_scheduler_groundwork() {
             context.last_irq_cs,
             context.last_irq_rflags
         );
+    }
+}
+
+/// Phase 5: Periodically monitor preemptive scheduling fairness.
+pub async fn log_preemption_fairness() {
+    loop {
+        sleep(Duration::from_secs(2)).await;
+
+        let kernel_tasks = crate::task::scheduler::get_kernel_task_counters();
+        if kernel_tasks.iter().all(|&count| count == 0) {
+            continue;
+        }
+
+        let max_count = kernel_tasks.iter().copied().max().unwrap_or(0);
+        let min_count = kernel_tasks.iter().copied().min().unwrap_or(1);
+        let fairness_score = if min_count > 0 {
+            max_count as f64 / min_count as f64
+        } else {
+            1.0
+        };
+
+        println!(
+            "Fairness: T1={}, T2={}, T3={}, T4={}, score={:.3}",
+            kernel_tasks[0], kernel_tasks[1], kernel_tasks[2], kernel_tasks[3], fairness_score
+        );
+
+        if fairness_score > 1.10 {
+            ProcessMetricsGlobal::record_fairness_violation();
+            process_metrics::log_event(EventType::StarvationDetected, 0);
+        }
     }
 }
 
