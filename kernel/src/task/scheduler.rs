@@ -421,7 +421,25 @@ extern "C" fn demo_context_task_a() -> ! {
         let count = DEMO_A_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
         if count % 250_000 == 0 {
             let b = DEMO_B_COUNT.load(Ordering::Relaxed);
-            crate::println!("ContextLab A={}, B={}", count, b);
+            let context = context_stats();
+            crate::println!(
+                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}",
+                count,
+                b,
+                context.switches,
+                context.irq_forced_succeeded,
+                context.irq_forced_blocked,
+                context.preempt_misses
+            );
+            crate::serial_println!(
+                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}",
+                count,
+                b,
+                context.switches,
+                context.irq_forced_succeeded,
+                context.irq_forced_blocked,
+                context.preempt_misses
+            );
         }
         preempt_if_irq_pending();
         context_lab_watchdog_check();
@@ -433,7 +451,25 @@ extern "C" fn demo_context_task_b() -> ! {
         let count = DEMO_B_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
         if count % 250_000 == 0 {
             let a = DEMO_A_COUNT.load(Ordering::Relaxed);
-            crate::println!("ContextLab A={}, B={}", a, count);
+            let context = context_stats();
+            crate::println!(
+                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}",
+                a,
+                count,
+                context.switches,
+                context.irq_forced_succeeded,
+                context.irq_forced_blocked,
+                context.preempt_misses
+            );
+            crate::serial_println!(
+                "ContextLab A={}, B={}, switches={}, irq_forced_ok={}, irq_forced_blocked={}, misses={}",
+                a,
+                count,
+                context.switches,
+                context.irq_forced_succeeded,
+                context.irq_forced_blocked,
+                context.preempt_misses
+            );
         }
         preempt_if_irq_pending();
         context_lab_watchdog_check();
