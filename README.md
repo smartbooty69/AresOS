@@ -138,10 +138,17 @@ Status: ✅ Complete (validated 2026-03-17, cooperative async; context switching
 
 Checklist: `docs/phase-4-checklist.md`
 
-### Phase 5 — Storage
+### Phase 5 — Preemptive Scheduling & Process Foundation
 
-* filesystem support
-* disk access drivers
+* preemptive scheduler mode (`preemption` feature)
+* process abstraction + PID allocator
+* fairness telemetry and preemption observability
+
+Status: 🚧 In Progress (started 2026-03-17)
+
+Checklist: `docs/phase-5-checklist.md`
+
+Scheduler deep dive: `docs/SCHEDULER.md`
 
 ### Phase 6 — User Space
 
@@ -209,6 +216,26 @@ Run isolated context-switch lab mode:
 
 ```
 cargo run -p kernel --features context-lab
+```
+
+Run Phase 5 preemption mode:
+
+```
+cargo run -p kernel --features preemption
+```
+
+Legacy experimental flags are still available but deprecated:
+
+```
+--features context-lab
+--features irq-exit-preempt-experimental
+--features irq-exit-wrapper-experimental
+```
+
+Phase 5 integration checks:
+
+```
+cargo test -p kernel --test preemption_integration
 ```
 
 Run tests (unit + integration under QEMU):
