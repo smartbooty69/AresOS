@@ -23,8 +23,10 @@ cargo run -p kernel --features context-lab
 - context handoff occurs when a pending preemption request is observed
 - log output includes lines like:
   - `ContextLab A=..., B=...`
+  - `Preemptive-groundwork: ... misses=..., watchdog_trips=...`
 
 ## Notes
 
 - This mode is intended for scheduler experimentation.
+- A watchdog panics if no context switch progress is observed for an extended tick window.
 - Default boot path remains unchanged when `context-lab` is not enabled.

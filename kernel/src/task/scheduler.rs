@@ -16,6 +16,11 @@ static RESCHEDULE_POINTS: AtomicU64 = AtomicU64::new(0);
 static DEMO_CONTEXT_TASKS_SPAWNED: AtomicBool = AtomicBool::new(false);
 static DEMO_A_COUNT: AtomicU64 = AtomicU64::new(0);
 static DEMO_B_COUNT: AtomicU64 = AtomicU64::new(0);
+static PREEMPT_MISSES: AtomicU64 = AtomicU64::new(0);
+static LAST_SWITCH_TICK: AtomicU64 = AtomicU64::new(0);
+static WATCHDOG_TRIPS: AtomicU64 = AtomicU64::new(0);
+
+const CONTEXT_LAB_MAX_STALL_TICKS: u64 = 10_000;
 
 lazy_static! {
     static ref CONTEXT_SCHEDULER: Mutex<ContextScheduler> = Mutex::new(ContextScheduler::new());
@@ -153,6 +158,8 @@ pub struct ContextSchedulerStats {
     pub switching_enabled: bool,
     pub demo_a_count: u64,
     pub demo_b_count: u64,
+    pub preempt_misses: u64,
+    pub watchdog_trips: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -221,7 +228,23 @@ pub fn yield_now() {
 pub fn preempt_if_requested() {
     if take_reschedule_request() {
         record_reschedule_point();
-        let _ = try_context_reschedule();
+        if try_context_reschedule() {
+            LAST_SWITCH_TICK.store(TIMER_TICKS.load(Ordering::Relaxed), Ordering::Relaxed);
+        } else {
+            PREEMPT_MISSES.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+fn context_lab_watchdog_check() {
+    let now = TIMER_TICKS.load(Ordering::Relaxed);
+    let last = LAST_SWITCH_TICK.load(Ordering::Relaxed);
+    if now.saturating_sub(last) > CONTEXT_LAB_MAX_STALL_TICKS {
+        WATCHDOG_TRIPS.fetch_add(1, Ordering::Relaxed);
+        panic!(
+            "Context-lab watchdog: no context switch for {} ticks",
+            now.saturating_sub(last)
+        );
     }
 }
 
@@ -250,6 +273,8 @@ pub fn context_stats() -> ContextSchedulerStats {
         switching_enabled: scheduler.switch_enabled(),
         demo_a_count,
         demo_b_count,
+        preempt_misses: PREEMPT_MISSES.load(Ordering::Relaxed),
+        watchdog_trips: WATCHDOG_TRIPS.load(Ordering::Relaxed),
     }
 }
 
@@ -270,6 +295,7 @@ extern "C" fn demo_context_task_a() -> ! {
             crate::println!("ContextLab A={}, B={}", count, b);
         }
         preempt_if_requested();
+        context_lab_watchdog_check();
     }
 }
 
@@ -281,6 +307,7 @@ extern "C" fn demo_context_task_b() -> ! {
             crate::println!("ContextLab A={}, B={}", a, count);
         }
         preempt_if_requested();
+        context_lab_watchdog_check();
     }
 }
 
@@ -289,6 +316,7 @@ pub fn spawn_demo_context_tasks() {
         .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
         .is_ok()
     {
+        LAST_SWITCH_TICK.store(TIMER_TICKS.load(Ordering::Relaxed), Ordering::Relaxed);
         spawn_context_task("ctx-demo-a", demo_context_task_a);
         spawn_context_task("ctx-demo-b", demo_context_task_b);
     }
