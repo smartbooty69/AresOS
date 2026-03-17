@@ -27,6 +27,7 @@ cargo run -p kernel --features irq-exit-wrapper-experimental
 - demo tasks increment counters and call `preempt_if_requested()`
 - timer IRQ requests reschedule every scheduler quantum
 - timer IRQ records interrupted RIP/RSP for scheduler telemetry
+- timer IRQ frame metadata is validated and exported (`irq_frame_invalid`, `irq_has_rsp`, `irq_cs`, `irq_rflags`)
 - context handoff occurs at deferred checkpoints when pending IRQ preemption is observed
 - timer IRQ tail preempt hook records forced-preempt attempts/blocks (telemetry-only at this stage)
 - optional low-level IRQ wrapper path can replace the timer interrupt entry/return sequence (experimental)

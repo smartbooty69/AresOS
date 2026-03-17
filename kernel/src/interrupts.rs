@@ -33,8 +33,7 @@ global_asm!(
     "    push r13",
     "    push r14",
     "    push r15",
-    "    mov rdi, [rsp + 120]",
-    "    lea rsi, [rsp + 144]",
+    "    lea rdi, [rsp + 120]",
     "    call ares_timer_irq_dispatch",
     "    pop r15",
     "    pop r14",
@@ -231,9 +230,25 @@ extern "x86-interrupt" fn timer_interrupt_handler(stack_frame: InterruptStackFra
 
 #[cfg(feature = "irq-exit-wrapper-experimental")]
 #[no_mangle]
-extern "C" fn ares_timer_irq_dispatch(interrupted_rip: u64, interrupted_rsp: u64) {
+extern "C" fn ares_timer_irq_dispatch(interrupt_frame_ptr: *const u64) {
+    let interrupted_rip = unsafe { *interrupt_frame_ptr.add(0) };
+    let interrupted_cs = unsafe { *interrupt_frame_ptr.add(1) };
+    let interrupted_rflags = unsafe { *interrupt_frame_ptr.add(2) };
+    let has_rsp = (interrupted_cs & 0x3) == 0x3;
+    let interrupted_rsp = if has_rsp {
+        unsafe { *interrupt_frame_ptr.add(3) }
+    } else {
+        0
+    };
+
     crate::performance::metrics::TICK_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-    crate::task::scheduler::on_timer_interrupt_context(interrupted_rip, interrupted_rsp);
+    crate::task::scheduler::on_timer_interrupt_context_detailed(
+        interrupted_rip,
+        interrupted_rsp,
+        interrupted_cs,
+        interrupted_rflags,
+        has_rsp,
+    );
     crate::task::scheduler::on_timer_tick();
     let _ = crate::task::scheduler::try_forced_preempt_from_irq_tail();
     crate::task::timer::notify_tick();

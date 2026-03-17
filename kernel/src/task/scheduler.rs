@@ -24,6 +24,10 @@ static IRQ_PREEMPT_REQUESTS: AtomicU64 = AtomicU64::new(0);
 static IRQ_PREEMPT_CHECKPOINTS: AtomicU64 = AtomicU64::new(0);
 static LAST_IRQ_RIP: AtomicU64 = AtomicU64::new(0);
 static LAST_IRQ_RSP: AtomicU64 = AtomicU64::new(0);
+static LAST_IRQ_CS: AtomicU64 = AtomicU64::new(0);
+static LAST_IRQ_RFLAGS: AtomicU64 = AtomicU64::new(0);
+static LAST_IRQ_HAS_RSP: AtomicBool = AtomicBool::new(false);
+static IRQ_FRAME_INVALID: AtomicU64 = AtomicU64::new(0);
 static IRQ_FORCED_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 static IRQ_FORCED_BLOCKED: AtomicU64 = AtomicU64::new(0);
 static IRQ_FORCED_SUCCEEDED: AtomicU64 = AtomicU64::new(0);
@@ -172,6 +176,10 @@ pub struct ContextSchedulerStats {
     pub irq_preempt_checkpoints: u64,
     pub last_irq_rip: u64,
     pub last_irq_rsp: u64,
+    pub last_irq_cs: u64,
+    pub last_irq_rflags: u64,
+    pub last_irq_has_rsp: bool,
+    pub irq_frame_invalid: u64,
     pub irq_forced_attempts: u64,
     pub irq_forced_blocked: u64,
     pub irq_forced_succeeded: u64,
@@ -201,8 +209,27 @@ pub fn on_timer_tick() {
 
 /// Called by the timer IRQ handler with interrupted execution context.
 pub fn on_timer_interrupt_context(interrupted_rip: u64, interrupted_rsp: u64) {
+    on_timer_interrupt_context_detailed(interrupted_rip, interrupted_rsp, 0, 0, true);
+}
+
+pub fn on_timer_interrupt_context_detailed(
+    interrupted_rip: u64,
+    interrupted_rsp: u64,
+    interrupted_cs: u64,
+    interrupted_rflags: u64,
+    has_rsp: bool,
+) {
     LAST_IRQ_RIP.store(interrupted_rip, Ordering::Relaxed);
     LAST_IRQ_RSP.store(interrupted_rsp, Ordering::Relaxed);
+    LAST_IRQ_CS.store(interrupted_cs, Ordering::Relaxed);
+    LAST_IRQ_RFLAGS.store(interrupted_rflags, Ordering::Relaxed);
+    LAST_IRQ_HAS_RSP.store(has_rsp, Ordering::Relaxed);
+
+    if !is_canonical_address(interrupted_rip)
+        || (has_rsp && !is_canonical_address(interrupted_rsp))
+    {
+        IRQ_FRAME_INVALID.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 /// IRQ-tail preemption hook.
@@ -333,6 +360,12 @@ fn context_lab_watchdog_check() {
     }
 }
 
+fn is_canonical_address(addr: u64) -> bool {
+    let sign = (addr >> 47) & 1;
+    let upper = addr >> 48;
+    upper == 0 || (sign == 1 && upper == 0xFFFF)
+}
+
 pub fn run_context_lab() -> ! {
     let mut boot_context = CpuContext::capture();
     let first = {
@@ -364,6 +397,10 @@ pub fn context_stats() -> ContextSchedulerStats {
         irq_preempt_checkpoints: IRQ_PREEMPT_CHECKPOINTS.load(Ordering::Relaxed),
         last_irq_rip: LAST_IRQ_RIP.load(Ordering::Relaxed),
         last_irq_rsp: LAST_IRQ_RSP.load(Ordering::Relaxed),
+        last_irq_cs: LAST_IRQ_CS.load(Ordering::Relaxed),
+        last_irq_rflags: LAST_IRQ_RFLAGS.load(Ordering::Relaxed),
+        last_irq_has_rsp: LAST_IRQ_HAS_RSP.load(Ordering::Relaxed),
+        irq_frame_invalid: IRQ_FRAME_INVALID.load(Ordering::Relaxed),
         irq_forced_attempts: IRQ_FORCED_ATTEMPTS.load(Ordering::Relaxed),
         irq_forced_blocked: IRQ_FORCED_BLOCKED.load(Ordering::Relaxed),
         irq_forced_succeeded: IRQ_FORCED_SUCCEEDED.load(Ordering::Relaxed),
