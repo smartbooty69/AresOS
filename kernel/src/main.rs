@@ -41,6 +41,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     );
     println!("System ticks since boot: {}", counters.ticks());
 
+    let context_lab_mode = cfg!(feature = "context-lab");
     let live_context_switch = cfg!(feature = "live-context-switch");
     kernel::task::scheduler::set_context_switching_enabled(live_context_switch);
     kernel::task::scheduler::spawn_demo_context_tasks();
@@ -48,6 +49,11 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         "Context demo tasks registered (live switch mode: {}).",
         live_context_switch
     );
+
+    if context_lab_mode {
+        println!("Context lab mode active. Starting context-only scheduler.");
+        kernel::task::scheduler::run_context_lab();
+    }
 
     // Run the async executor with the keyboard task.
     let mut executor = Executor::new();

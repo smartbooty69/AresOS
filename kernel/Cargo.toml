@@ -16,6 +16,7 @@ doctest = false
 [features]
 default = []
 live-context-switch = []
+context-lab = ["live-context-switch"]
 
 [dependencies]
 bootloader = { version = "0.9", features = ["map_physical_memory"] }

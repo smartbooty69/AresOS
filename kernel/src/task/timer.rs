@@ -137,15 +137,18 @@ pub async fn log_scheduler_groundwork() {
     loop {
         sleep(Duration::from_secs(10)).await;
         let stats = crate::task::scheduler::stats();
+        let context = crate::task::scheduler::context_stats();
         println!(
-            "Preemptive-groundwork: ticks={}, requests={}, points={}, pending={}, ctx_tasks={}, ctx_switches={}, ctx_live_switch={}",
+            "Preemptive-groundwork: ticks={}, requests={}, points={}, pending={}, ctx_tasks={}, ctx_switches={}, ctx_live_switch={}, demo_a={}, demo_b={}",
             stats.timer_ticks,
             stats.reschedule_requests,
             stats.reschedule_points,
             stats.pending,
             stats.context_tasks,
             stats.context_switches,
-            stats.context_switching_enabled
+            stats.context_switching_enabled,
+            context.demo_a_count,
+            context.demo_b_count
         );
     }
 }

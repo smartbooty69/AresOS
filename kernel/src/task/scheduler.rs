@@ -1,6 +1,6 @@
 //! Scheduler signaling primitives for preemption groundwork.
 
-use super::context::{switch_context, RunnableContext};
+use super::context::{switch_context, CpuContext, RunnableContext};
 use alloc::{collections::VecDeque, vec::Vec};
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use lazy_static::lazy_static;
@@ -14,6 +14,8 @@ static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
 static RESCHEDULE_REQUESTS: AtomicU64 = AtomicU64::new(0);
 static RESCHEDULE_POINTS: AtomicU64 = AtomicU64::new(0);
 static DEMO_CONTEXT_TASKS_SPAWNED: AtomicBool = AtomicBool::new(false);
+static DEMO_A_COUNT: AtomicU64 = AtomicU64::new(0);
+static DEMO_B_COUNT: AtomicU64 = AtomicU64::new(0);
 
 lazy_static! {
     static ref CONTEXT_SCHEDULER: Mutex<ContextScheduler> = Mutex::new(ContextScheduler::new());
@@ -79,9 +81,14 @@ impl ContextScheduler {
             return false;
         }
 
-        if !self.switch_enabled {
-            self.switches = self.switches.saturating_add(1);
-            return true;
+        self.switches = self.switches.saturating_add(1);
+        !self.switch_enabled
+    }
+
+    fn prepare_live_switch(&mut self) -> Option<(*mut CpuContext, *const CpuContext)> {
+        let (current, next) = self.next_pair()?;
+        if current == next {
+            return None;
         }
 
         let (current_ctx, next_ctx) = if current < next {
@@ -98,11 +105,28 @@ impl ContextScheduler {
             )
         };
 
-        unsafe {
-            switch_context(current_ctx, next_ctx);
-        }
         self.switches = self.switches.saturating_add(1);
-        true
+        Some((current_ctx as *mut CpuContext, next_ctx as *const CpuContext))
+    }
+
+    fn first_context(&mut self) -> Option<*const CpuContext> {
+        if self.tasks.is_empty() {
+            return None;
+        }
+
+        if self.current.is_none() {
+            self.current = self.ready_queue.pop_front();
+        }
+
+        let current = self.current?;
+        Some(&self.tasks[current].runnable.context as *const CpuContext)
+    }
+
+    fn demo_counts(&self) -> (u64, u64) {
+        (
+            DEMO_A_COUNT.load(Ordering::Relaxed),
+            DEMO_B_COUNT.load(Ordering::Relaxed),
+        )
     }
 
     fn context_task_count(&self) -> usize {
@@ -127,6 +151,8 @@ pub struct ContextSchedulerStats {
     pub tasks: usize,
     pub switches: u64,
     pub switching_enabled: bool,
+    pub demo_a_count: u64,
+    pub demo_b_count: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -168,15 +194,55 @@ pub fn set_context_switching_enabled(enabled: bool) {
 }
 
 pub fn try_context_reschedule() -> bool {
-    CONTEXT_SCHEDULER.lock().try_switch()
+    let maybe_live_switch = {
+        let mut scheduler = CONTEXT_SCHEDULER.lock();
+        if scheduler.switch_enabled() {
+            scheduler.prepare_live_switch()
+        } else {
+            return scheduler.try_switch();
+        }
+    };
+
+    let (current, next) = match maybe_live_switch {
+        Some(pair) => pair,
+        None => return false,
+    };
+
+    unsafe {
+        switch_context(&mut *current, &*next);
+    }
+    true
+}
+
+pub fn yield_now() {
+    let _ = try_context_reschedule();
+}
+
+pub fn run_context_lab() -> ! {
+    let mut boot_context = CpuContext::capture();
+    let first = {
+        let mut scheduler = CONTEXT_SCHEDULER.lock();
+        scheduler
+            .first_context()
+            .expect("context lab requires at least one context task")
+    };
+
+    unsafe {
+        switch_context(&mut boot_context, &*first);
+    }
+
+    panic!("context lab returned to boot context unexpectedly");
 }
 
 pub fn context_stats() -> ContextSchedulerStats {
     let scheduler = CONTEXT_SCHEDULER.lock();
+    let (demo_a_count, demo_b_count) = scheduler.demo_counts();
     ContextSchedulerStats {
         tasks: scheduler.context_task_count(),
         switches: scheduler.context_switch_count(),
         switching_enabled: scheduler.switch_enabled(),
+        demo_a_count,
+        demo_b_count,
     }
 }
 
@@ -191,13 +257,23 @@ pub fn context_task_names() -> Vec<&'static str> {
 
 extern "C" fn demo_context_task_a() -> ! {
     loop {
-        core::hint::spin_loop();
+        let count = DEMO_A_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        if count % 250_000 == 0 {
+            let b = DEMO_B_COUNT.load(Ordering::Relaxed);
+            crate::println!("ContextLab A={}, B={}", count, b);
+        }
+        yield_now();
     }
 }
 
 extern "C" fn demo_context_task_b() -> ! {
     loop {
-        core::hint::spin_loop();
+        let count = DEMO_B_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        if count % 250_000 == 0 {
+            let a = DEMO_A_COUNT.load(Ordering::Relaxed);
+            crate::println!("ContextLab A={}, B={}", a, count);
+        }
+        yield_now();
     }
 }
 

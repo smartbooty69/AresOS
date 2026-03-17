@@ -193,6 +193,12 @@ Run AresOS using QEMU:
 cargo run -p kernel
 ```
 
+Run isolated context-switch lab mode:
+
+```
+cargo run -p kernel --features context-lab
+```
+
 Run tests (unit + integration under QEMU):
 
 ```
