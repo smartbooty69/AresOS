@@ -114,17 +114,29 @@ Checklist: `docs/phase-1-checklist.md`
 * keyboard driver
 * timer interrupts
 
+Status: ✅ Complete (validated 2026-03-17)
+
+Checklist: `docs/phase-2-checklist.md`
+
 ### Phase 3 — Memory
 
 * paging implementation
 * frame allocator
 * heap allocation
 
+Status: ✅ Complete (validated 2026-03-17)
+
+Checklist: `docs/phase-3-checklist.md`
+
 ### Phase 4 — Processes
 
 * multitasking scheduler
 * context switching
 * task management
+
+Status: ✅ Complete (validated 2026-03-17, cooperative async; context switching in `context-lab` mode)
+
+Checklist: `docs/phase-4-checklist.md`
 
 ### Phase 5 — Storage
 
