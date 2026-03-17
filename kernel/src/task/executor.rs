@@ -5,12 +5,15 @@
 //! yet ready.
 
 use super::{Task, TaskId, TaskState};
-use alloc::{collections::BTreeMap, sync::Arc, task::Wake};
+use alloc::{collections::BTreeMap, sync::Arc, task::Wake, vec::Vec};
+use crate::performance::metrics::TICK_COUNTER;
 use core::{
     sync::atomic::{AtomicUsize, Ordering},
     task::{Context, Poll, Waker},
 };
 use crossbeam_queue::ArrayQueue;
+use lazy_static::lazy_static;
+use spin::Mutex;
 
 /// Maximum number of wake notifications that can be queued simultaneously.
 const WAKE_QUEUE_SIZE: usize = 100;
@@ -19,6 +22,27 @@ static ACTIVE_TASKS: AtomicUsize = AtomicUsize::new(0);
 static SLEEPING_TASKS: AtomicUsize = AtomicUsize::new(0);
 static READY_QUEUE_DEPTH: AtomicUsize = AtomicUsize::new(0);
 static COMPLETED_TASKS: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Debug, Clone, Copy)]
+struct RegistryEntry {
+    name: &'static str,
+    state: TaskState,
+    created_tick: u64,
+    state_since_tick: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TaskSnapshot {
+    pub id: u64,
+    pub name: &'static str,
+    pub state: TaskState,
+    pub age_ticks: u64,
+    pub state_age_ticks: u64,
+}
+
+lazy_static! {
+    static ref TASK_REGISTRY: Mutex<BTreeMap<TaskId, RegistryEntry>> = Mutex::new(BTreeMap::new());
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct ExecutorStats {
@@ -48,6 +72,20 @@ impl Executor {
     /// Enqueue a task for execution.
     pub fn spawn(&mut self, task: Task) {
         let task_id = task.id();
+        let task_name = task.name();
+        let created_tick = task.created_tick();
+        let task_state = task.state();
+
+        TASK_REGISTRY.lock().insert(
+            task_id,
+            RegistryEntry {
+                name: task_name,
+                state: task_state,
+                created_tick,
+                state_since_tick: created_tick,
+            },
+        );
+
         if self.tasks.insert(task_id, task).is_some() {
             panic!("task with same ID already in executor");
         }
@@ -91,6 +129,10 @@ impl Executor {
                 SLEEPING_TASKS.fetch_sub(1, Ordering::Relaxed);
             }
             task.set_state(TaskState::Ready);
+            if let Some(entry) = TASK_REGISTRY.lock().get_mut(&task_id) {
+                entry.state = TaskState::Ready;
+                entry.state_since_tick = TICK_COUNTER.load(Ordering::Relaxed);
+            }
 
             let waker = waker_cache
                 .entry(task_id)
@@ -99,13 +141,22 @@ impl Executor {
             match task.poll(&mut context) {
                 Poll::Ready(()) => {
                     task.set_state(TaskState::Finished);
+                    if let Some(entry) = TASK_REGISTRY.lock().get_mut(&task_id) {
+                        entry.state = TaskState::Finished;
+                        entry.state_since_tick = TICK_COUNTER.load(Ordering::Relaxed);
+                    }
                     tasks.remove(&task_id);
                     waker_cache.remove(&task_id);
+                    TASK_REGISTRY.lock().remove(&task_id);
                     ACTIVE_TASKS.fetch_sub(1, Ordering::Relaxed);
                     COMPLETED_TASKS.fetch_add(1, Ordering::Relaxed);
                 }
                 Poll::Pending => {
                     task.set_state(TaskState::Sleeping);
+                    if let Some(entry) = TASK_REGISTRY.lock().get_mut(&task_id) {
+                        entry.state = TaskState::Sleeping;
+                        entry.state_since_tick = TICK_COUNTER.load(Ordering::Relaxed);
+                    }
                     SLEEPING_TASKS.fetch_add(1, Ordering::Relaxed);
                 }
             }
@@ -127,6 +178,10 @@ impl Executor {
     pub fn run(&mut self) -> ! {
         loop {
             self.run_ready_tasks();
+            if crate::task::scheduler::take_reschedule_request() {
+                let _ = crate::task::scheduler::try_context_reschedule();
+                crate::task::scheduler::record_reschedule_point();
+            }
             self.sleep_if_idle();
         }
     }
@@ -145,6 +200,21 @@ pub fn system_stats() -> ExecutorStats {
         ready_queue_depth: READY_QUEUE_DEPTH.load(Ordering::Relaxed),
         completed_tasks: COMPLETED_TASKS.load(Ordering::Relaxed),
     }
+}
+
+pub fn system_task_snapshots() -> Vec<TaskSnapshot> {
+    let now = TICK_COUNTER.load(Ordering::Relaxed);
+    TASK_REGISTRY
+        .lock()
+        .iter()
+        .map(|(id, entry)| TaskSnapshot {
+            id: id.as_u64(),
+            name: entry.name,
+            state: entry.state,
+            age_ticks: now.saturating_sub(entry.created_tick),
+            state_age_ticks: now.saturating_sub(entry.state_since_tick),
+        })
+        .collect()
 }
 
 // ──────────────────────────────── task waker ─────────────────────────────────

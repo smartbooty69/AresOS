@@ -13,6 +13,10 @@ name = "kernel"
 path = "src/lib.rs"
 doctest = false
 
+[features]
+default = []
+live-context-switch = []
+
 [dependencies]
 bootloader = { version = "0.9", features = ["map_physical_memory"] }
 x86_64 = "0.14"

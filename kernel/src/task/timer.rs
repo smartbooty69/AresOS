@@ -14,6 +14,7 @@ use futures_util::task::AtomicWaker;
 
 /// PIT frequency used by the kernel timer IRQ handler.
 pub const PIT_HZ: u64 = 100;
+const WATCHDOG_SLEEP_THRESHOLD_TICKS: u64 = PIT_HZ * 30;
 
 const TICK_MILLIS: u64 = 1_000 / PIT_HZ;
 
@@ -91,6 +92,60 @@ pub async fn log_scheduler_stats() {
             stats.sleeping_tasks,
             stats.ready_queue_depth,
             stats.completed_tasks
+        );
+    }
+}
+
+/// Periodically print per-task runtime snapshots.
+pub async fn log_task_registry() {
+    loop {
+        sleep(Duration::from_secs(10)).await;
+        let snapshots = crate::task::executor::system_task_snapshots();
+        if snapshots.is_empty() {
+            println!("Tasks: no active tasks in registry");
+            continue;
+        }
+
+        println!("Task registry ({} active):", snapshots.len());
+        for task in snapshots {
+            println!(
+                "  #{} {} state={:?} age={} ticks state_age={} ticks",
+                task.id, task.name, task.state, task.age_ticks, task.state_age_ticks
+            );
+        }
+    }
+}
+
+pub async fn task_watchdog() {
+    loop {
+        sleep(Duration::from_secs(5)).await;
+        let snapshots = crate::task::executor::system_task_snapshots();
+        for task in snapshots {
+            if task.state == crate::task::TaskState::Sleeping
+                && task.state_age_ticks >= WATCHDOG_SLEEP_THRESHOLD_TICKS
+            {
+                println!(
+                    "Watchdog: task #{} ({}) sleeping for {} ticks",
+                    task.id, task.name, task.state_age_ticks
+                );
+            }
+        }
+    }
+}
+
+pub async fn log_scheduler_groundwork() {
+    loop {
+        sleep(Duration::from_secs(10)).await;
+        let stats = crate::task::scheduler::stats();
+        println!(
+            "Preemptive-groundwork: ticks={}, requests={}, points={}, pending={}, ctx_tasks={}, ctx_switches={}, ctx_live_switch={}",
+            stats.timer_ticks,
+            stats.reschedule_requests,
+            stats.reschedule_points,
+            stats.pending,
+            stats.context_tasks,
+            stats.context_switches,
+            stats.context_switching_enabled
         );
     }
 }

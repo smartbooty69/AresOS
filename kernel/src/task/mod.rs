@@ -3,8 +3,10 @@
 //! Provides a simple executor that drives `core::future::Future` tasks to
 //! completion using a spinlock-based task queue.
 
+pub mod context;
 pub mod executor;
 pub mod keyboard;
+pub mod scheduler;
 pub mod timer;
 
 use alloc::boxed::Box;
@@ -24,6 +26,10 @@ impl TaskId {
     fn new() -> Self {
         static NEXT_ID: AtomicU64 = AtomicU64::new(0);
         TaskId(NEXT_ID.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub fn as_u64(self) -> u64 {
+        self.0
     }
 }
 

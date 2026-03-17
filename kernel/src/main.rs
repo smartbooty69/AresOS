@@ -41,13 +41,28 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     );
     println!("System ticks since boot: {}", counters.ticks());
 
+    let live_context_switch = cfg!(feature = "live-context-switch");
+    kernel::task::scheduler::set_context_switching_enabled(live_context_switch);
+    kernel::task::scheduler::spawn_demo_context_tasks();
+    println!(
+        "Context demo tasks registered (live switch mode: {}).",
+        live_context_switch
+    );
+
     // Run the async executor with the keyboard task.
     let mut executor = Executor::new();
     executor.spawn(Task::named("keyboard", keyboard::print_keypresses()));
     executor.spawn(Task::named("uptime", timer::log_uptime()));
     executor.spawn(Task::named("scheduler-stats", timer::log_scheduler_stats()));
+    executor.spawn(Task::named(
+        "scheduler-groundwork",
+        timer::log_scheduler_groundwork(),
+    ));
+    executor.spawn(Task::named("task-registry", timer::log_task_registry()));
+    executor.spawn(Task::named("task-watchdog", timer::task_watchdog()));
 
     let stats = executor.stats();
+    let context_names = kernel::task::scheduler::context_task_names();
     println!(
         "Tasks: active={}, sleeping={}, ready={}, completed={}",
         stats.active_tasks,
@@ -55,6 +70,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         stats.ready_queue_depth,
         stats.completed_tasks
     );
+    println!("Context tasks: {:?}", context_names);
     println!("Kernel ready. Entering event loop.");
     executor.run();
 }
