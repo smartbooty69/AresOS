@@ -18,7 +18,9 @@ cargo run -p kernel --features context-lab
 
 - async executor tasks are skipped in lab mode
 - boot enters context-task scheduler directly
-- demo tasks increment counters and call `yield_now()` cooperatively
+- demo tasks increment counters and call `preempt_if_requested()`
+- timer IRQ requests reschedule every scheduler quantum
+- context handoff occurs when a pending preemption request is observed
 - log output includes lines like:
   - `ContextLab A=..., B=...`
 

@@ -218,6 +218,13 @@ pub fn yield_now() {
     let _ = try_context_reschedule();
 }
 
+pub fn preempt_if_requested() {
+    if take_reschedule_request() {
+        record_reschedule_point();
+        let _ = try_context_reschedule();
+    }
+}
+
 pub fn run_context_lab() -> ! {
     let mut boot_context = CpuContext::capture();
     let first = {
@@ -262,7 +269,7 @@ extern "C" fn demo_context_task_a() -> ! {
             let b = DEMO_B_COUNT.load(Ordering::Relaxed);
             crate::println!("ContextLab A={}, B={}", count, b);
         }
-        yield_now();
+        preempt_if_requested();
     }
 }
 
@@ -273,7 +280,7 @@ extern "C" fn demo_context_task_b() -> ! {
             let a = DEMO_A_COUNT.load(Ordering::Relaxed);
             crate::println!("ContextLab A={}, B={}", a, count);
         }
-        yield_now();
+        preempt_if_requested();
     }
 }
 
