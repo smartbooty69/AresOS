@@ -260,5 +260,13 @@ Instead, it exists to answer a question:
 
 **What happens when you build a system entirely on your own terms?**
 
+---
+
+# License
+
+Licensed under the Apache License, Version 2.0.
+
+See [LICENSE](LICENSE) for the full text.
+
 
 
