@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
 import re
+import select
+import signal
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 
 FAIRNESS_RE = re.compile(r"Phase5-Fairness:\s+(.*)")
@@ -91,32 +95,75 @@ def main() -> int:
     print("Command:", " ".join(cmd))
 
     samples: list[Sample] = []
+    output_tail: list[str] = []
+    process = None
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             cmd,
+            env=os.environ.copy(),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
-            timeout=args.duration,
+            text=False,
+            bufsize=0,
+            start_new_session=True,
         )
-        output = completed.stdout or ""
-    except subprocess.TimeoutExpired as timeout:
-        output = timeout.stdout or ""
-        if isinstance(output, bytes):
-            output = output.decode(errors="replace")
+
+        deadline = time.time() + args.duration
+        pending = ""
+        while process.stdout is not None and time.time() < deadline:
+            ready, _, _ = select.select([process.stdout], [], [], 0.2)
+            if not ready:
+                if process.poll() is not None:
+                    break
+                continue
+
+            chunk = os.read(process.stdout.fileno(), 4096)
+            if not chunk:
+                if process.poll() is not None:
+                    break
+                continue
+
+            pending += chunk.decode(errors="replace")
+            while "\n" in pending:
+                line, pending = pending.split("\n", 1)
+                output_tail.append(line.rstrip("\r"))
+                if len(output_tail) > 40:
+                    output_tail.pop(0)
+
+                sample = parse_sample(line)
+                if sample is not None:
+                    samples.append(sample)
+
+        if pending:
+            output_tail.append(pending.rstrip("\r"))
+            if len(output_tail) > 40:
+                output_tail.pop(0)
+
+            sample = parse_sample(pending)
+            if sample is not None:
+                samples.append(sample)
+
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=3)
     except KeyboardInterrupt:
+        if process is not None and process.poll() is None:
+            os.killpg(process.pid, signal.SIGTERM)
         print("Interrupted by user")
         return 130
-
-    for line in output.splitlines():
-        sample = parse_sample(line)
-        if sample is not None:
-            samples.append(sample)
 
     if len(samples) < args.min_samples:
         print(
             f"FAIL: captured only {len(samples)} fairness samples, need at least {args.min_samples}"
         )
+        if output_tail:
+            print("Last captured output lines:")
+            for line in output_tail[-20:]:
+                print(f"  {line}")
         return 1
 
     ok, errors = validate(samples, args.max_score)

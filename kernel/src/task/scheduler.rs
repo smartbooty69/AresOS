@@ -49,6 +49,7 @@ static TIMER_STALL_FALLBACKS: AtomicU64 = AtomicU64::new(0);
 static IRQ_HANDOFF_QUEUED: AtomicU64 = AtomicU64::new(0);
 static IRQ_HANDOFF_CONSUMED: AtomicU64 = AtomicU64::new(0);
 static HANDOFF_PENDING: AtomicBool = AtomicBool::new(false);
+static LAST_PHASE5_FAIRNESS_LOG_TICK: AtomicU64 = AtomicU64::new(0);
 static DEMO_CTX_A_PTR: AtomicU64 = AtomicU64::new(0);
 static DEMO_CTX_B_PTR: AtomicU64 = AtomicU64::new(0);
 static DEMO_CURRENT_SLOT: AtomicU64 = AtomicU64::new(0);
@@ -58,6 +59,8 @@ static SCHEDULER_LOCK_CONTENTION: AtomicU64 = AtomicU64::new(0);
 const CONTEXT_LAB_MAX_STALL_TICKS: u64 = 10_000;
 const CONTEXT_LAB_TIMER_STALL_SPIN_THRESHOLD: u64 = 20_000;
 const CONTEXT_LAB_LOG_INTERVAL: u64 = 50_000;
+const PHASE5_FAIRNESS_LOG_INTERVAL_TICKS: u64 = 50;
+const PHASE5_VOLUNTARY_YIELD_INTERVAL: u64 = 2048;
 
 lazy_static! {
     static ref CONTEXT_SCHEDULER: Mutex<ContextScheduler> = Mutex::new(ContextScheduler::new());
@@ -535,6 +538,43 @@ fn is_canonical_address(addr: u64) -> bool {
     upper == 0 || (sign == 1 && upper == 0xFFFF)
 }
 
+fn log_phase5_fairness_if_due() {
+    let now = TIMER_TICKS.load(Ordering::Relaxed);
+    let last = LAST_PHASE5_FAIRNESS_LOG_TICK.load(Ordering::Relaxed);
+    if now.saturating_sub(last) < PHASE5_FAIRNESS_LOG_INTERVAL_TICKS {
+        return;
+    }
+
+    if LAST_PHASE5_FAIRNESS_LOG_TICK
+        .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+        .is_err()
+    {
+        return;
+    }
+
+    let counters = get_kernel_task_counters();
+    let max_count = counters.iter().copied().max().unwrap_or(1);
+    let min_count = counters.iter().copied().min().unwrap_or(1);
+    let fairness_score = if min_count > 0 {
+        max_count as f64 / min_count as f64
+    } else {
+        1.0
+    };
+
+    crate::serial_println!(
+        "Phase5-Fairness: T1={}, T2={}, T3={}, T4={}, score={:.3}",
+        counters[0], counters[1], counters[2], counters[3], fairness_score
+    );
+}
+
+fn phase5_task_checkpoint(local_count: u64) {
+    if local_count % PHASE5_VOLUNTARY_YIELD_INTERVAL == 0 {
+        yield_now();
+    } else {
+        preempt_if_requested();
+    }
+}
+
 pub fn run_context_lab() -> ! {
     let mut boot_context = CpuContext::capture();
     let first = {
@@ -673,42 +713,46 @@ extern "C" fn demo_context_task_b() -> ! {
 
 // Phase 5: Independent kernel task entry points for fairness testing
 extern "C" fn kernel_task_1() -> ! {
-    const LOG_INTERVAL: u64 = 100_000;
     let mut local_count = 0u64;
     loop {
         interrupts::enable();
         increment_kernel_task_counter(1);
         local_count += 1;
-        if local_count % LOG_INTERVAL == 0 {
-            let counters = get_kernel_task_counters();
-            crate::println!("Phase5-Fairness: T1={}, T2={}, T3={}, T4={}", 
-                counters[0], counters[1], counters[2], counters[3]);
-        }
-        preempt_if_irq_pending();
+        log_phase5_fairness_if_due();
+        phase5_task_checkpoint(local_count);
     }
 }
 
 extern "C" fn kernel_task_2() -> ! {
+    let mut local_count = 0u64;
     loop {
         interrupts::enable();
         increment_kernel_task_counter(2);
-        preempt_if_irq_pending();
+        local_count += 1;
+        log_phase5_fairness_if_due();
+        phase5_task_checkpoint(local_count);
     }
 }
 
 extern "C" fn kernel_task_3() -> ! {
+    let mut local_count = 0u64;
     loop {
         interrupts::enable();
         increment_kernel_task_counter(3);
-        preempt_if_irq_pending();
+        local_count += 1;
+        log_phase5_fairness_if_due();
+        phase5_task_checkpoint(local_count);
     }
 }
 
 extern "C" fn kernel_task_4() -> ! {
+    let mut local_count = 0u64;
     loop {
         interrupts::enable();
         increment_kernel_task_counter(4);
-        preempt_if_irq_pending();
+        local_count += 1;
+        log_phase5_fairness_if_due();
+        phase5_task_checkpoint(local_count);
     }
 }
 
