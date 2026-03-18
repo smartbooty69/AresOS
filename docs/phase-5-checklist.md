@@ -27,7 +27,7 @@ Phase 5 builds on Phase 4's context switching infrastructure to establish:
 - [x] Replace `context-lab` feature flag with `preemption` (non-experimental)
 - [x] Establish scheduler quantum configuration (default SCHED_QUANTUM_TICKS = 5)
 - [x] Per-task time-slice accounting and preemption tracking (TaskMetrics struct)
-- [ ] CPU affinity tags (single-core prep for multi-core)
+- [x] CPU affinity tags (single-core prep for multi-core)
 
 ### 2. Process Abstraction
 - [x] `Process` struct with lifecycle/metrics metadata (kernel stack isolation pending)
@@ -57,8 +57,8 @@ Phase 5 builds on Phase 4's context switching infrastructure to establish:
   - fairness violations (task exceeding quantum)
 
 ### 5. Scheduler Configuration & Tuning
-- [ ] Command-line / config file support for scheduler parameters
-  - `SCHEDULER_QUANTUM_TICKS` (default 10)
+- [x] Runtime configuration support for scheduler parameters (API-based)
+  - `SCHEDULER_QUANTUM_TICKS` (default 5)
   - `MAX_PROCESSES` (default 256)
   - `FAIRNESS_CHECK_INTERVAL_TICKS` (from Phase 4, verify still working)
 - [ ] Runtime parameter adjustment via kernel console (future work)
@@ -73,6 +73,7 @@ Phase 5 builds on Phase 4's context switching infrastructure to establish:
   - `fairness_test.rs` - 4 tasks, measure quanta distribution
   - `preemption_latency_test.rs` - measure switch delay
   - `process_isolation_test.rs` - verify process table operations
+  - `scripts/phase5-soak-check` - runtime fairness/progress soak checker
 
 ### 7. Documentation & Examples
 - [x] README: section on preemption, quantum tuning, fairness guarantees
@@ -81,18 +82,15 @@ Phase 5 builds on Phase 4's context switching infrastructure to establish:
 - [x] Scheduler API documentation (`task::scheduler` public interface)
 
 ### 8. Clean-up & Consolidation
-- [ ] Remove `context-lab` feature flag (replaced by `preemption`)
+- [x] Remove `context-lab` feature flag (replaced by `preemption`)
 - [x] Remove `irq-exit-preempt-experimental` and `irq-exit-wrapper-experimental`
-  (or document as deprecated) ✅ documented as deprecated in feature metadata
-- [ ] Consolidate IRQ preemption path (single, stable code path)
+- [x] Consolidate IRQ preemption path (single, stable code path)
 - [x] No compiler warnings in preemptive builds
 
 ## Deferred Hardening (Phase 6 Candidate)
 
-- CPU affinity tags (single-core prep for multi-core)
 - Runtime scheduler parameterization (CLI/console)
 - Long-duration (10-minute) preemption soak + latency SLA validation
-- Final removal of legacy experimental IRQ feature flags
 
 ## Implementation Order (Recommended)
 

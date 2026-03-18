@@ -212,30 +212,22 @@ Run AresOS using QEMU:
 cargo run -p kernel
 ```
 
-Run isolated context-switch lab mode:
-
-```
-cargo run -p kernel --features context-lab
-```
-
 Run Phase 5 preemption mode:
 
 ```
 cargo run -p kernel --features preemption
 ```
 
-Legacy experimental flags are still available but deprecated:
-
-```
---features context-lab
---features irq-exit-preempt-experimental
---features irq-exit-wrapper-experimental
-```
-
 Phase 5 integration checks:
 
 ```
 cargo test -p kernel --test preemption_integration
+```
+
+Phase 5 soak check (fairness/progress):
+
+```
+./scripts/phase5-soak-check --duration 120 --min-samples 3
 ```
 
 Run tests (unit + integration under QEMU):
