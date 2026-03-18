@@ -5,58 +5,10 @@
 //! exception vectors).
 
 use crate::{gdt, hlt_loop, println};
-#[cfg(feature = "irq-exit-wrapper-experimental")]
-use core::arch::global_asm;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin::Mutex;
-#[cfg(feature = "irq-exit-wrapper-experimental")]
-use x86_64::VirtAddr;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
-
-#[cfg(feature = "irq-exit-wrapper-experimental")]
-global_asm!(
-    ".global ares_timer_irq_wrapper",
-    "ares_timer_irq_wrapper:",
-    "    push rax",
-    "    push rcx",
-    "    push rdx",
-    "    push rbx",
-    "    push rbp",
-    "    push rsi",
-    "    push rdi",
-    "    push r8",
-    "    push r9",
-    "    push r10",
-    "    push r11",
-    "    push r12",
-    "    push r13",
-    "    push r14",
-    "    push r15",
-    "    lea rdi, [rsp + 120]",
-    "    call ares_timer_irq_dispatch",
-    "    pop r15",
-    "    pop r14",
-    "    pop r13",
-    "    pop r12",
-    "    pop r11",
-    "    pop r10",
-    "    pop r9",
-    "    pop r8",
-    "    pop rdi",
-    "    pop rsi",
-    "    pop rbp",
-    "    pop rbx",
-    "    pop rdx",
-    "    pop rcx",
-    "    pop rax",
-    "    iretq",
-);
-
-#[cfg(feature = "irq-exit-wrapper-experimental")]
-unsafe extern "C" {
-    fn ares_timer_irq_wrapper();
-}
 
 // ─────────────────────────────── PIC offsets ─────────────────────────────────
 
@@ -108,13 +60,6 @@ lazy_static! {
         idt.segment_not_present.set_handler_fn(segment_not_present_handler);
 
         // Hardware IRQs.
-        #[cfg(feature = "irq-exit-wrapper-experimental")]
-        unsafe {
-            idt[InterruptIndex::Timer.as_usize()]
-                .set_handler_addr(VirtAddr::new(ares_timer_irq_wrapper as *const () as usize as u64));
-        }
-
-        #[cfg(not(feature = "irq-exit-wrapper-experimental"))]
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
 
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
@@ -212,42 +157,11 @@ extern "x86-interrupt" fn segment_not_present_handler(
 // ───────────────────────── hardware IRQ handlers ─────────────────────────────
 
 /// Timer IRQ: increment the global tick counter and signal end-of-interrupt.
-#[cfg(not(feature = "irq-exit-wrapper-experimental"))]
 extern "x86-interrupt" fn timer_interrupt_handler(stack_frame: InterruptStackFrame) {
     crate::performance::metrics::TICK_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     crate::task::scheduler::on_timer_interrupt_context(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
-    );
-    crate::task::scheduler::on_timer_tick();
-    let _ = crate::task::scheduler::try_forced_preempt_from_irq_tail();
-    crate::task::timer::notify_tick();
-    unsafe {
-        PICS.lock()
-            .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
-    }
-}
-
-#[cfg(feature = "irq-exit-wrapper-experimental")]
-#[no_mangle]
-extern "C" fn ares_timer_irq_dispatch(interrupt_frame_ptr: *const u64) {
-    let interrupted_rip = unsafe { *interrupt_frame_ptr.add(0) };
-    let interrupted_cs = unsafe { *interrupt_frame_ptr.add(1) };
-    let interrupted_rflags = unsafe { *interrupt_frame_ptr.add(2) };
-    let has_rsp = (interrupted_cs & 0x3) == 0x3;
-    let interrupted_rsp = if has_rsp {
-        unsafe { *interrupt_frame_ptr.add(3) }
-    } else {
-        0
-    };
-
-    crate::performance::metrics::TICK_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-    crate::task::scheduler::on_timer_interrupt_context_detailed(
-        interrupted_rip,
-        interrupted_rsp,
-        interrupted_cs,
-        interrupted_rflags,
-        has_rsp,
     );
     crate::task::scheduler::on_timer_tick();
     let _ = crate::task::scheduler::try_forced_preempt_from_irq_tail();

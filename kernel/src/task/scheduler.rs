@@ -10,6 +10,11 @@ use x86_64::instructions::interrupts;
 
 /// Number of timer ticks per scheduling quantum.
 pub const SCHED_QUANTUM_TICKS: u64 = 5;
+pub const FAIRNESS_CHECK_INTERVAL_TICKS: u64 = 10;
+
+static SCHED_QUANTUM_TICKS_RUNTIME: AtomicU64 = AtomicU64::new(SCHED_QUANTUM_TICKS);
+static FAIRNESS_CHECK_INTERVAL_TICKS_RUNTIME: AtomicU64 =
+    AtomicU64::new(FAIRNESS_CHECK_INTERVAL_TICKS);
 
 static NEED_RESCHEDULE: AtomicBool = AtomicBool::new(false);
 static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
@@ -280,6 +285,8 @@ pub struct ContextSchedulerStats {
 #[derive(Debug, Clone, Copy)]
 pub struct SchedulerStats {
     pub timer_ticks: u64,
+    pub quantum_ticks: u64,
+    pub fairness_check_interval_ticks: u64,
     pub reschedule_requests: u64,
     pub reschedule_points: u64,
     pub pending: bool,
@@ -291,12 +298,29 @@ pub struct SchedulerStats {
 /// Called from the timer interrupt handler.
 pub fn on_timer_tick() {
     let ticks = TIMER_TICKS.fetch_add(1, Ordering::Relaxed) + 1;
-    if ticks % SCHED_QUANTUM_TICKS == 0 {
+    let quantum_ticks = SCHED_QUANTUM_TICKS_RUNTIME.load(Ordering::Relaxed).max(1);
+    if ticks % quantum_ticks == 0 {
         NEED_RESCHEDULE.store(true, Ordering::Relaxed);
         RESCHEDULE_REQUESTS.fetch_add(1, Ordering::Relaxed);
         IRQ_PREEMPT_PENDING.store(true, Ordering::Relaxed);
         IRQ_PREEMPT_REQUESTS.fetch_add(1, Ordering::Relaxed);
     }
+}
+
+pub fn scheduler_quantum_ticks() -> u64 {
+    SCHED_QUANTUM_TICKS_RUNTIME.load(Ordering::Relaxed)
+}
+
+pub fn set_scheduler_quantum_ticks(ticks: u64) {
+    SCHED_QUANTUM_TICKS_RUNTIME.store(ticks.max(1), Ordering::Relaxed);
+}
+
+pub fn fairness_check_interval_ticks() -> u64 {
+    FAIRNESS_CHECK_INTERVAL_TICKS_RUNTIME.load(Ordering::Relaxed)
+}
+
+pub fn set_fairness_check_interval_ticks(ticks: u64) {
+    FAIRNESS_CHECK_INTERVAL_TICKS_RUNTIME.store(ticks.max(1), Ordering::Relaxed);
 }
 
 /// Called by the timer IRQ handler with interrupted execution context.
@@ -335,11 +359,6 @@ pub fn try_forced_preempt_from_irq_tail() -> bool {
     }
 
     IRQ_FORCED_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
-
-    if !cfg!(feature = "irq-exit-preempt-experimental") {
-        IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
-        return false;
-    }
 
     if !CONTEXT_SWITCH_ENABLED_ATOMIC.load(Ordering::Relaxed) {
         IRQ_FORCED_BLOCKED.fetch_add(1, Ordering::Relaxed);
@@ -718,6 +737,8 @@ pub fn stats() -> SchedulerStats {
     let context = context_stats();
     SchedulerStats {
         timer_ticks: TIMER_TICKS.load(Ordering::Relaxed),
+        quantum_ticks: scheduler_quantum_ticks(),
+        fairness_check_interval_ticks: fairness_check_interval_ticks(),
         reschedule_requests: RESCHEDULE_REQUESTS.load(Ordering::Relaxed),
         reschedule_points: RESCHEDULE_POINTS.load(Ordering::Relaxed),
         pending: NEED_RESCHEDULE.load(Ordering::Relaxed),
@@ -766,11 +787,12 @@ mod tests {
     #[test_case]
     fn scheduler_tick_requests_reschedule() {
         let before = stats();
-        for _ in 0..SCHED_QUANTUM_TICKS {
+        let quantum = scheduler_quantum_ticks();
+        for _ in 0..quantum {
             on_timer_tick();
         }
         let after = stats();
-        assert!(after.timer_ticks >= before.timer_ticks + SCHED_QUANTUM_TICKS);
+        assert!(after.timer_ticks >= before.timer_ticks + quantum);
         assert!(after.reschedule_requests >= before.reschedule_requests + 1);
     }
 

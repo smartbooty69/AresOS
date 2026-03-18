@@ -48,36 +48,21 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     );
 
     let preemption_mode = cfg!(feature = "preemption");
-    let context_lab_mode = cfg!(feature = "context-lab");
-    let live_context_switch = cfg!(feature = "live-context-switch");
-    let irq_exit_preempt_experimental = cfg!(feature = "irq-exit-preempt-experimental");
-    let irq_exit_wrapper_experimental = cfg!(feature = "irq-exit-wrapper-experimental");
-    
-    println!("Kernel features: preemption={}, context-lab={}, live-switch={}", 
-        preemption_mode, context_lab_mode, live_context_switch);
+    println!("Kernel features: preemption={}", preemption_mode);
 
     if preemption_mode {
         println!("Phase 5: Preemption mode active. Spawning 4 kernel tasks for fairness testing.");
         kernel::task::scheduler::set_context_switching_enabled(true);
         kernel::task::scheduler::spawn_kernel_tasks_phase5();
-        println!("Kernel tasks spawned. Starting preemptive scheduler. SCHED_QUANTUM_TICKS={}", 
-            kernel::task::scheduler::SCHED_QUANTUM_TICKS);
+        println!(
+            "Kernel tasks spawned. Starting preemptive scheduler. quantum_ticks={}, fairness_interval_ticks={}",
+            kernel::task::scheduler::scheduler_quantum_ticks(),
+            kernel::task::scheduler::fairness_check_interval_ticks()
+        );
         kernel::task::scheduler::run_context_lab();
     }
 
-    kernel::task::scheduler::spawn_demo_context_tasks();
-    kernel::task::scheduler::set_context_switching_enabled(live_context_switch);
-    println!(
-        "Context demo tasks registered (live switch mode: {}, irq-exit preempt experimental: {}, irq-exit wrapper experimental: {}).",
-        live_context_switch,
-        irq_exit_preempt_experimental,
-        irq_exit_wrapper_experimental
-    );
-
-    if context_lab_mode && !preemption_mode {
-        println!("Context lab mode active. Starting context-only scheduler.");
-        kernel::task::scheduler::run_context_lab();
-    }
+    kernel::task::scheduler::set_context_switching_enabled(false);
 
     // Run the async executor with the keyboard task.
     let mut executor = Executor::new();

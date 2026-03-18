@@ -18,11 +18,6 @@ doctest = false
 default = []
 # Production preemptive scheduling (Phase 5+)
 preemption = []
-# Deprecated experimental flags (kept for backward compatibility; use `preemption` instead)
-live-context-switch = []
-context-lab = ["live-context-switch"]
-irq-exit-preempt-experimental = ["context-lab"]
-irq-exit-wrapper-experimental = ["irq-exit-preempt-experimental"]
 
 [dependencies]
 bootloader = { version = "0.9", features = ["map_physical_memory"] }

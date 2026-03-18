@@ -7,8 +7,12 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use crate::performance::process_metrics::{self, EventType, ProcessMetricsGlobal};
+use core::sync::atomic::{AtomicUsize, Ordering};
 use lazy_static::lazy_static;
 use spin::Mutex;
+
+const DEFAULT_MAX_PROCESSES: usize = 256;
+static MAX_PROCESSES_CONFIG: AtomicUsize = AtomicUsize::new(DEFAULT_MAX_PROCESSES);
 
 /// Process identifier: unique per-process handle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -41,6 +45,13 @@ pub enum ProcessState {
     Terminated,
 }
 
+/// CPU affinity for a process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessCpuAffinity {
+    Core0,
+    Any,
+}
+
 impl ProcessState {
     /// Check if the process can be scheduled.
     pub fn is_runnable(self) -> bool {
@@ -67,6 +78,8 @@ pub struct Process {
     switches: u64,
     /// Parent process ID (None for init process).
     parent_pid: Option<ProcessId>,
+    /// CPU affinity hint for scheduler placement.
+    affinity: ProcessCpuAffinity,
 }
 
 impl Process {
@@ -81,6 +94,7 @@ impl Process {
             cpu_ticks: 0,
             switches: 0,
             parent_pid: None,
+            affinity: ProcessCpuAffinity::Core0,
         }
     }
 
@@ -136,6 +150,14 @@ impl Process {
     pub fn set_parent(&mut self, parent_pid: ProcessId) {
         self.parent_pid = Some(parent_pid);
     }
+
+    pub fn affinity(&self) -> ProcessCpuAffinity {
+        self.affinity
+    }
+
+    pub fn set_affinity(&mut self, affinity: ProcessCpuAffinity) {
+        self.affinity = affinity;
+    }
 }
 
 /// Global PID allocator for process creation.
@@ -161,7 +183,6 @@ impl PidAllocator {
 pub struct ProcessRegistry {
     allocator: PidAllocator,
     processes: BTreeMap<ProcessId, Process>,
-    max_processes: usize,
 }
 
 impl ProcessRegistry {
@@ -169,13 +190,12 @@ impl ProcessRegistry {
         ProcessRegistry {
             allocator: PidAllocator::new(),
             processes: BTreeMap::new(),
-            max_processes: 256,
         }
     }
 
     /// Create and register a new process.
     pub fn create_process(&mut self, name: &'static str, created_tick: u64) -> Option<ProcessId> {
-        if self.processes.len() >= self.max_processes {
+        if self.processes.len() >= MAX_PROCESSES_CONFIG.load(Ordering::Relaxed) {
             return None; // Process table full
         }
 
@@ -257,6 +277,19 @@ impl ProcessRegistry {
             .collect()
     }
 
+    pub fn set_affinity(&mut self, pid: ProcessId, affinity: ProcessCpuAffinity) -> bool {
+        if let Some(process) = self.processes.get_mut(&pid) {
+            process.set_affinity(affinity);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn affinity_of(&self, pid: ProcessId) -> Option<ProcessCpuAffinity> {
+        self.processes.get(&pid).map(|process| process.affinity())
+    }
+
     /// Reap terminated processes and reclaim resources.
     pub fn reap_terminated(&mut self) -> u64 {
         let before = self.processes.len();
@@ -334,6 +367,22 @@ pub fn reap_terminated_processes() -> u64 {
     PROCESS_REGISTRY.lock().reap_terminated()
 }
 
+pub fn set_max_processes(max: usize) {
+    MAX_PROCESSES_CONFIG.store(max.max(1), Ordering::Relaxed);
+}
+
+pub fn max_processes() -> usize {
+    MAX_PROCESSES_CONFIG.load(Ordering::Relaxed)
+}
+
+pub fn set_process_affinity(pid: ProcessId, affinity: ProcessCpuAffinity) -> bool {
+    PROCESS_REGISTRY.lock().set_affinity(pid, affinity)
+}
+
+pub fn process_affinity(pid: ProcessId) -> Option<ProcessCpuAffinity> {
+    PROCESS_REGISTRY.lock().affinity_of(pid)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,5 +420,13 @@ mod tests {
 
         assert_eq!(process.cpu_ticks(), 50);
         assert_eq!(process.switches(), 1);
+    }
+
+    #[test_case]
+    fn process_affinity_default_and_update() {
+        let mut process = Process::new(ProcessId::from_raw(3), "affinity-test", 0);
+        assert_eq!(process.affinity(), ProcessCpuAffinity::Core0);
+        process.set_affinity(ProcessCpuAffinity::Any);
+        assert_eq!(process.affinity(), ProcessCpuAffinity::Any);
     }
 }
