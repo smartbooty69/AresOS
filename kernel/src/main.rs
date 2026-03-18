@@ -75,6 +75,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     ));
     executor.spawn(Task::named("task-registry", timer::log_task_registry()));
     executor.spawn(Task::named("task-watchdog", timer::task_watchdog()));
+    
+    if cfg!(feature = "preemption") {
+        executor.spawn(Task::named("fairness-monitor", timer::log_preemption_fairness()));
+    }
 
     let stats = executor.stats();
     let context_names = kernel::task::scheduler::context_task_names();
