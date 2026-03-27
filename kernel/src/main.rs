@@ -30,6 +30,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // Set up the kernel heap.
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialisation failed");
+    kernel::task::keyboard::init_scancode_queue();
 
     println!("Memory subsystem initialised.");
 
@@ -52,6 +53,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     if preemption_mode {
         println!("Phase 5: Preemption mode active. Spawning 4 kernel tasks for fairness testing.");
+        println!("Console: type 'help' to list runtime scheduler commands.");
         kernel::task::scheduler::set_context_switching_enabled(true);
         kernel::task::scheduler::spawn_kernel_tasks_phase5();
         println!(

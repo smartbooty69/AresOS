@@ -50,6 +50,8 @@ static IRQ_HANDOFF_QUEUED: AtomicU64 = AtomicU64::new(0);
 static IRQ_HANDOFF_CONSUMED: AtomicU64 = AtomicU64::new(0);
 static HANDOFF_PENDING: AtomicBool = AtomicBool::new(false);
 static LAST_PHASE5_FAIRNESS_LOG_TICK: AtomicU64 = AtomicU64::new(0);
+static MAX_PREEMPT_BACKLOG: AtomicU64 = AtomicU64::new(0);
+static MAX_ESTIMATED_LATENCY_MS: AtomicU64 = AtomicU64::new(0);
 static DEMO_CTX_A_PTR: AtomicU64 = AtomicU64::new(0);
 static DEMO_CTX_B_PTR: AtomicU64 = AtomicU64::new(0);
 static DEMO_CURRENT_SLOT: AtomicU64 = AtomicU64::new(0);
@@ -538,6 +540,16 @@ fn is_canonical_address(addr: u64) -> bool {
     upper == 0 || (sign == 1 && upper == 0xFFFF)
 }
 
+fn update_atomic_max(target: &AtomicU64, value: u64) {
+    let mut current = target.load(Ordering::Relaxed);
+    while value > current {
+        match target.compare_exchange(current, value, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => break,
+            Err(observed) => current = observed,
+        }
+    }
+}
+
 fn log_phase5_fairness_if_due() {
     let now = TIMER_TICKS.load(Ordering::Relaxed);
     let last = LAST_PHASE5_FAIRNESS_LOG_TICK.load(Ordering::Relaxed);
@@ -553,6 +565,7 @@ fn log_phase5_fairness_if_due() {
     }
 
     let counters = get_kernel_task_counters();
+    let scheduler_stats = stats();
     let max_count = counters.iter().copied().max().unwrap_or(1);
     let min_count = counters.iter().copied().min().unwrap_or(1);
     let fairness_score = if min_count > 0 {
@@ -561,13 +574,40 @@ fn log_phase5_fairness_if_due() {
         1.0
     };
 
+    let request_backlog = scheduler_stats
+        .reschedule_requests
+        .saturating_sub(scheduler_stats.reschedule_points);
+    update_atomic_max(&MAX_PREEMPT_BACKLOG, request_backlog);
+
+    let tick_millis = 10u64;
+    let estimated_latency_ms = request_backlog
+        .saturating_mul(scheduler_stats.quantum_ticks)
+        .saturating_mul(tick_millis);
+    update_atomic_max(&MAX_ESTIMATED_LATENCY_MS, estimated_latency_ms);
+
+    let max_backlog = MAX_PREEMPT_BACKLOG.load(Ordering::Relaxed);
+    let max_estimated_latency_ms = MAX_ESTIMATED_LATENCY_MS.load(Ordering::Relaxed);
+
     crate::serial_println!(
         "Phase5-Fairness: T1={}, T2={}, T3={}, T4={}, score={:.3}",
         counters[0], counters[1], counters[2], counters[3], fairness_score
     );
+
+    crate::serial_println!(
+        "Phase5-Latency: ticks={}, quantum={}, req={}, pts={}, backlog={}, max_backlog={}, est_ms={}, max_est_ms={}",
+        scheduler_stats.timer_ticks,
+        scheduler_stats.quantum_ticks,
+        scheduler_stats.reschedule_requests,
+        scheduler_stats.reschedule_points,
+        request_backlog,
+        max_backlog,
+        estimated_latency_ms,
+        max_estimated_latency_ms
+    );
 }
 
 fn phase5_task_checkpoint(local_count: u64) {
+    crate::task::keyboard::poll_console_commands();
     if local_count % PHASE5_VOLUNTARY_YIELD_INTERVAL == 0 {
         yield_now();
     } else {
