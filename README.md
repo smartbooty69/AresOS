@@ -144,7 +144,7 @@ Checklist: `docs/phase-4-checklist.md`
 * process abstraction + PID allocator
 * fairness telemetry and preemption observability
 
-Status: 🚧 In Progress (started 2026-03-17)
+Status: ✅ Core Complete (validated 2026-03-23; hardening items remain)
 
 Checklist: `docs/phase-5-checklist.md`
 
@@ -228,6 +228,12 @@ Phase 5 soak check (fairness/progress):
 
 ```
 ./scripts/phase5-soak-check --duration 120 --min-samples 3
+```
+
+Phase 5 latency check (<100ms estimated preemption latency):
+
+```
+./scripts/phase5-latency-check --duration 120 --min-samples 5 --max-latency-ms 100
 ```
 
 Run tests (unit + integration under QEMU):

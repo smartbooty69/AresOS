@@ -1,6 +1,6 @@
 # Phase 5 Checklist (Preemptive Scheduling & Process Foundation)
 
-**Date**: 2026-03-17  
+**Date**: 2026-03-23  
 **Status**: Complete (core Phase 5 scope) ✅
 
 ## Scope
@@ -67,13 +67,15 @@ Phase 5 builds on Phase 4's context switching infrastructure to establish:
 - [x] Spawn 4 independent long-running kernel tasks
 - [x] Each task increments its own counter and periodically yields
 - [x] Verify all 4 tasks advance roughly equally (fairness test)
-- [ ] No single task starves others; preemption latency < 100ms (deferred to soak/hardening)
-- [ ] 10-minute soak test: no stalls, all metrics advance
+- [x] No single task starves others (validated by 10-minute soak on 2026-03-23)
+- [x] Preemption latency < 100ms (validated by `scripts/phase5-latency-check` on 2026-03-23)
+- [x] 10-minute soak test: no stalls, all metrics advance (passed 2026-03-23)
 - [x] Extend `tests/` with preemption-specific integration tests
   - `fairness_test.rs` - 4 tasks, measure quanta distribution
   - `preemption_latency_test.rs` - measure switch delay
   - `process_isolation_test.rs` - verify process table operations
   - `scripts/phase5-soak-check` - runtime fairness/progress soak checker
+  - `scripts/phase5-latency-check` - runtime preemption latency SLA checker
 
 ### 7. Documentation & Examples
 - [x] README: section on preemption, quantum tuning, fairness guarantees
@@ -90,7 +92,6 @@ Phase 5 builds on Phase 4's context switching infrastructure to establish:
 ## Deferred Hardening (Phase 6 Candidate)
 
 - Runtime scheduler parameterization (CLI/console)
-- Long-duration (10-minute) preemption soak + latency SLA validation
 
 ## Implementation Order (Recommended)
 
@@ -167,10 +168,12 @@ Pass criteria:
 
 ## Validation Snapshot
 
-- All Phase 4 tests must continue passing ✅ (27 tests passing)
-- New soak test baseline: *pending (multi-task fairness test ready to run)*
-- Performance baseline: *pending*
+- `cargo test -p kernel` ✅
+- `cargo test -p kernel --features preemption` ✅
+- `./scripts/phase5-soak-check --duration 600 --min-samples 10` ✅ (passed 2026-03-23)
+- `./scripts/phase5-latency-check --duration 120 --min-samples 5 --max-latency-ms 100` ✅ (passed 2026-03-23)
+- Remaining hardening validation: runtime scheduler parameter adjustment via kernel console
 
 ---
 
-**Next Step**: Build Process abstraction and observability module.
+**Next Step**: Runtime scheduler parameter adjustment via kernel console.
