@@ -7,6 +7,7 @@ AresOS Phase 5 uses a preemptive, round-robin context scheduler for kernel tasks
 - Quantum: `SCHED_QUANTUM_TICKS = 5`
 - Runtime quantum override API: `set_scheduler_quantum_ticks(ticks)`
 - Runtime fairness-interval API: `set_fairness_check_interval_ticks(ticks)`
+- Atomic runtime config API: `apply_runtime_config(config)`
 - Trigger: timer tick sets reschedule flag each quantum boundary
 - Switch path: deferred preemption checkpoint in task loops (`preempt_if_irq_pending`)
 - Selection: round-robin over runnable context tasks
@@ -68,6 +69,7 @@ Main public APIs in `task::scheduler`:
 - `scheduler_lock_contention()`
 - `scheduler_quantum_ticks()` / `set_scheduler_quantum_ticks()`
 - `fairness_check_interval_ticks()` / `set_fairness_check_interval_ticks()`
+- `runtime_config()` / `apply_runtime_config()`
 
 ## Running
 
@@ -82,3 +84,15 @@ Integration validation:
 ```bash
 cargo test -p kernel --test preemption_integration
 ```
+
+Budgeted matrix validation:
+
+```bash
+python scripts/validation_matrix.py --soak-duration 20 --latency-duration 20
+```
+
+Current enforced budgets in matrix mode:
+
+- fairness score `<= 1.10`
+- max estimated preemption latency `<= 100ms`
+- phase-6 runtime smoke line must report all true flags

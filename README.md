@@ -144,7 +144,7 @@ Checklist: `docs/phase-4-checklist.md`
 * process abstraction + PID allocator
 * fairness telemetry and preemption observability
 
-Status: ✅ Core Complete (validated 2026-03-23; hardening items remain)
+Status: ✅ Complete (validated 2026-05-06)
 
 Checklist: `docs/phase-5-checklist.md`
 
@@ -155,6 +155,10 @@ Scheduler deep dive: `docs/SCHEDULER.md`
 * command shell
 * system utilities
 * basic programs
+
+Status: ✅ Complete (validated 2026-05-06; shell + utilities + syscall/storage baseline)
+
+Checklist: `docs/phase-6-checklist.md`
 
 ---
 
@@ -196,6 +200,12 @@ Install QEMU (example on Ubuntu/Debian):
 sudo apt install qemu-system-x86
 ```
 
+Install QEMU on Windows (winget):
+
+```
+winget install --id SoftwareFreedomConservancy.QEMU --accept-package-agreements --accept-source-agreements
+```
+
 Build the OS:
 
 ```
@@ -234,6 +244,18 @@ Phase 5 latency check (<100ms estimated preemption latency):
 
 ```
 ./scripts/phase5-latency-check --duration 120 --min-samples 5 --max-latency-ms 100
+```
+
+Phase 6 smoke check:
+
+```
+./scripts/phase6-smoke-check
+```
+
+Full validation matrix (QEMU-backed):
+
+```
+python scripts/validation_matrix.py --soak-duration 20 --latency-duration 20
 ```
 
 Run tests (unit + integration under QEMU):

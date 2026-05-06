@@ -1,7 +1,7 @@
 # Phase 5 Checklist (Preemptive Scheduling & Process Foundation)
 
-**Date**: 2026-03-23  
-**Status**: Complete (core Phase 5 scope) ✅
+**Date**: 2026-05-06  
+**Status**: Complete ✅
 
 ## Scope
 
@@ -61,7 +61,7 @@ Phase 5 builds on Phase 4's context switching infrastructure to establish:
   - `SCHEDULER_QUANTUM_TICKS` (default 5)
   - `MAX_PROCESSES` (default 256)
   - `FAIRNESS_CHECK_INTERVAL_TICKS` (from Phase 4, verify still working)
-- [ ] Runtime parameter adjustment via kernel console (future work)
+- [x] Runtime parameter adjustment via kernel console
 
 ### 6. Integration & Testing
 - [x] Spawn 4 independent long-running kernel tasks
@@ -91,7 +91,7 @@ Phase 5 builds on Phase 4's context switching infrastructure to establish:
 
 ## Deferred Hardening (Phase 6 Candidate)
 
-- Runtime scheduler parameterization (CLI/console)
+- None.
 
 ## Implementation Order (Recommended)
 
@@ -172,8 +172,9 @@ Pass criteria:
 - `cargo test -p kernel --features preemption` ✅
 - `./scripts/phase5-soak-check --duration 600 --min-samples 10` ✅ (passed 2026-03-23)
 - `./scripts/phase5-latency-check --duration 120 --min-samples 5 --max-latency-ms 100` ✅ (passed 2026-03-23)
-- Remaining hardening validation: runtime scheduler parameter adjustment via kernel console
+- `python scripts/validation_matrix.py --soak-duration 20 --latency-duration 20` ✅ (passed 2026-05-06, Windows + QEMU)
+- Remaining hardening validation: none
 
 ---
 
-**Next Step**: Runtime scheduler parameter adjustment via kernel console.
+**Next Step**: Phase 6 user-space foundation and shell bring-up.
