@@ -87,6 +87,10 @@ pub enum EventType {
     Terminated,
     /// Fairness violation detected.
     StarvationDetected,
+    /// Runtime scheduler config accepted and applied.
+    SchedulerConfigUpdated,
+    /// Runtime scheduler config rejected by validation.
+    SchedulerConfigRejected,
 }
 
 /// Event ring buffer capacity (~6KB with current entry size).

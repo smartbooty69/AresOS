@@ -37,6 +37,7 @@ futures-util = { version = "0.3", default-features = false, features = ["alloc"]
 bootloader = { version = "0.9", features = ["map_physical_memory"] }
 
 [package.metadata.bootimage]
+run-command = ["C:/Program Files/qemu/qemu-system-x86_64.exe", "-drive", "format=raw,file={}"]
 test-args = [
 	"-device",
 	"isa-debug-exit,iobase=0xf4,iosize=0x04",

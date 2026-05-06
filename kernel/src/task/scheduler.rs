@@ -11,6 +11,10 @@ use x86_64::instructions::interrupts;
 /// Number of timer ticks per scheduling quantum.
 pub const SCHED_QUANTUM_TICKS: u64 = 5;
 pub const FAIRNESS_CHECK_INTERVAL_TICKS: u64 = 10;
+pub const MIN_SCHED_QUANTUM_TICKS: u64 = 1;
+pub const MAX_SCHED_QUANTUM_TICKS: u64 = 10_000;
+pub const MIN_FAIRNESS_CHECK_INTERVAL_TICKS: u64 = 1;
+pub const MAX_FAIRNESS_CHECK_INTERVAL_TICKS: u64 = 100_000;
 
 static SCHED_QUANTUM_TICKS_RUNTIME: AtomicU64 = AtomicU64::new(SCHED_QUANTUM_TICKS);
 static FAIRNESS_CHECK_INTERVAL_TICKS_RUNTIME: AtomicU64 =
@@ -300,6 +304,20 @@ pub struct SchedulerStats {
     pub context_switching_enabled: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SchedulerRuntimeConfig {
+    pub quantum_ticks: u64,
+    pub fairness_check_interval_ticks: u64,
+    pub max_processes: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SchedulerConfigError {
+    QuantumOutOfRange,
+    FairnessIntervalOutOfRange,
+    MaxProcessesOutOfRange,
+}
+
 /// Called from the timer interrupt handler.
 pub fn on_timer_tick() {
     let ticks = TIMER_TICKS.fetch_add(1, Ordering::Relaxed) + 1;
@@ -317,7 +335,8 @@ pub fn scheduler_quantum_ticks() -> u64 {
 }
 
 pub fn set_scheduler_quantum_ticks(ticks: u64) {
-    SCHED_QUANTUM_TICKS_RUNTIME.store(ticks.max(1), Ordering::Relaxed);
+    let clamped = ticks.clamp(MIN_SCHED_QUANTUM_TICKS, MAX_SCHED_QUANTUM_TICKS);
+    SCHED_QUANTUM_TICKS_RUNTIME.store(clamped, Ordering::Relaxed);
 }
 
 pub fn fairness_check_interval_ticks() -> u64 {
@@ -325,7 +344,48 @@ pub fn fairness_check_interval_ticks() -> u64 {
 }
 
 pub fn set_fairness_check_interval_ticks(ticks: u64) {
-    FAIRNESS_CHECK_INTERVAL_TICKS_RUNTIME.store(ticks.max(1), Ordering::Relaxed);
+    let clamped = ticks.clamp(
+        MIN_FAIRNESS_CHECK_INTERVAL_TICKS,
+        MAX_FAIRNESS_CHECK_INTERVAL_TICKS,
+    );
+    FAIRNESS_CHECK_INTERVAL_TICKS_RUNTIME.store(clamped, Ordering::Relaxed);
+}
+
+pub fn runtime_config() -> SchedulerRuntimeConfig {
+    SchedulerRuntimeConfig {
+        quantum_ticks: scheduler_quantum_ticks(),
+        fairness_check_interval_ticks: fairness_check_interval_ticks(),
+        max_processes: crate::task::process::max_processes(),
+    }
+}
+
+pub fn apply_runtime_config(
+    new_config: SchedulerRuntimeConfig,
+) -> Result<SchedulerRuntimeConfig, SchedulerConfigError> {
+    if !(MIN_SCHED_QUANTUM_TICKS..=MAX_SCHED_QUANTUM_TICKS).contains(&new_config.quantum_ticks) {
+        process_metrics::log_event(EventType::SchedulerConfigRejected, 0);
+        return Err(SchedulerConfigError::QuantumOutOfRange);
+    }
+    if !(MIN_FAIRNESS_CHECK_INTERVAL_TICKS..=MAX_FAIRNESS_CHECK_INTERVAL_TICKS)
+        .contains(&new_config.fairness_check_interval_ticks)
+    {
+        process_metrics::log_event(EventType::SchedulerConfigRejected, 0);
+        return Err(SchedulerConfigError::FairnessIntervalOutOfRange);
+    }
+    if new_config.max_processes == 0 || new_config.max_processes > 4096 {
+        process_metrics::log_event(EventType::SchedulerConfigRejected, 0);
+        return Err(SchedulerConfigError::MaxProcessesOutOfRange);
+    }
+
+    let previous = runtime_config();
+    interrupts::without_interrupts(|| {
+        SCHED_QUANTUM_TICKS_RUNTIME.store(new_config.quantum_ticks, Ordering::Relaxed);
+        FAIRNESS_CHECK_INTERVAL_TICKS_RUNTIME
+            .store(new_config.fairness_check_interval_ticks, Ordering::Relaxed);
+        crate::task::process::set_max_processes(new_config.max_processes);
+    });
+    process_metrics::log_event(EventType::SchedulerConfigUpdated, 0);
+    Ok(previous)
 }
 
 /// Called by the timer IRQ handler with interrupted execution context.
@@ -890,5 +950,40 @@ mod tests {
     #[test_case]
     fn context_task_names_initially_empty() {
         assert!(context_task_names().is_empty());
+    }
+
+    #[test_case]
+    fn runtime_config_apply_updates_all_fields() {
+        let original = runtime_config();
+        let updated = SchedulerRuntimeConfig {
+            quantum_ticks: 7,
+            fairness_check_interval_ticks: 21,
+            max_processes: 300,
+        };
+
+        let previous = apply_runtime_config(updated).expect("runtime config update should succeed");
+        assert_eq!(previous, original);
+        assert_eq!(runtime_config(), updated);
+
+        let _ = apply_runtime_config(original);
+    }
+
+    #[test_case]
+    fn runtime_config_reject_preserves_previous_values() {
+        let baseline = SchedulerRuntimeConfig {
+            quantum_ticks: 5,
+            fairness_check_interval_ticks: 10,
+            max_processes: 256,
+        };
+        let _ = apply_runtime_config(baseline);
+
+        let invalid = SchedulerRuntimeConfig {
+            quantum_ticks: 0,
+            fairness_check_interval_ticks: 10,
+            max_processes: 256,
+        };
+        let result = apply_runtime_config(invalid);
+        assert_eq!(result, Err(SchedulerConfigError::QuantumOutOfRange));
+        assert_eq!(runtime_config(), baseline);
     }
 }

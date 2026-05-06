@@ -31,8 +31,31 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Set up the kernel heap.
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialisation failed");
     kernel::task::keyboard::init_scancode_queue();
+    kernel::storage::init();
+    let boot_tick = kernel::performance::metrics::TICK_COUNTER.load(core::sync::atomic::Ordering::Relaxed);
+    let _ = kernel::task::process::create_kernel_process("shell", boot_tick);
 
     println!("Memory subsystem initialised.");
+    let storage_smoke_ok = match kernel::storage::list_files() {
+        Ok(files) => !files.is_empty(),
+        Err(_) => false,
+    };
+    let readme_smoke_ok = matches!(kernel::storage::read_file("/README.txt"), Ok(Some(_)));
+    let run_smoke_ok = kernel::task::userspace::run_program("echo", &["phase6-smoke"]).is_ok();
+    println!(
+        "Phase6-Smoke: mounted={}, list_ok={}, cat_ok={}, run_ok={}",
+        kernel::storage::is_mounted(),
+        storage_smoke_ok,
+        readme_smoke_ok,
+        run_smoke_ok
+    );
+    kernel::serial_println!(
+        "Phase6-Smoke: mounted={}, list_ok={}, cat_ok={}, run_ok={}",
+        kernel::storage::is_mounted(),
+        storage_smoke_ok,
+        readme_smoke_ok,
+        run_smoke_ok
+    );
 
     // Display performance counters at startup.
     let counters = PerformanceCounters::read();

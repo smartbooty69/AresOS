@@ -9,6 +9,7 @@ pub mod keyboard;
 pub mod process;
 pub mod scheduler;
 pub mod timer;
+pub mod userspace;
 
 use alloc::boxed::Box;
 use core::{

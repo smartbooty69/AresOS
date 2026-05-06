@@ -13,6 +13,7 @@ use core::{panic::PanicInfo, sync::atomic::Ordering};
 use kernel::{
     allocator, hlt_loop, memory,
     performance::{metrics::TICK_COUNTER, process_metrics},
+    syscall,
     task::{process, scheduler},
 };
 use x86_64::VirtAddr;
@@ -92,4 +93,40 @@ fn fairness_metrics_detect_imbalance() {
     let imbalanced_metrics = process_metrics::compute_fairness_metrics(&imbalanced);
     assert!(!imbalanced_metrics.is_fair());
     assert!(imbalanced_metrics.has_severe_starvation());
+}
+
+#[test_case]
+fn syscall_invalid_paths_are_rejected() {
+    assert_eq!(
+        syscall::invoke_raw(999, 0),
+        Err(syscall::SyscallError::InvalidSyscall)
+    );
+    assert_eq!(
+        syscall::invoke_raw(syscall::SyscallId::GetTickCount as u64, 123),
+        Err(syscall::SyscallError::InvalidArgument)
+    );
+}
+
+#[test_case]
+fn process_lifecycle_unknown_pid_operations_fail() {
+    let missing = process::ProcessId::from_raw(u64::MAX);
+    assert!(!process::set_process_state(missing, process::ProcessState::Ready));
+    assert!(!process::add_process_cpu_ticks(missing, 1));
+    assert!(!process::record_context_switch(missing));
+    assert!(!process::terminate_process(missing, -1));
+}
+
+#[test_case]
+fn storage_and_userspace_smoke_flow() {
+    kernel::storage::init();
+    let files = kernel::storage::list_files().expect("storage should be mounted");
+    assert!(!files.is_empty());
+    let readme = kernel::storage::read_file("/README.txt")
+        .expect("storage read should be available")
+        .expect("README should exist");
+    assert!(readme.contains("AresOS"));
+
+    let output = kernel::task::userspace::run_program("echo", &["ok", "flow"])
+        .expect("echo should run");
+    assert_eq!(output, "ok flow");
 }

@@ -20,6 +20,8 @@ pub mod interrupts;
 pub mod memory;
 pub mod performance;
 pub mod serial;
+pub mod storage;
+pub mod syscall;
 pub mod task;
 pub mod vga_buffer;
 
