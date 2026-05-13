@@ -71,6 +71,7 @@ pub enum ProcessLoadState {
     ExecutionBlocked,
     MappedStub,
     FrameBacked,
+    PageTableReady,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

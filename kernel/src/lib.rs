@@ -32,6 +32,7 @@ pub mod security;
 pub mod storage;
 pub mod syscall;
 pub mod task;
+pub mod user_memory;
 pub mod vga_buffer;
 
 use core::panic::PanicInfo;

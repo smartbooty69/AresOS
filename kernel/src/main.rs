@@ -234,6 +234,22 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         backing_status.zero_filled_bytes,
         phase15_backing_ok
     );
+    let phase16_tables_ok = kernel::task::program_loader::phase16_smoke_check();
+    let table_status = kernel::task::program_loader::status();
+    println!(
+        "Phase16-PageTables: tables={}, rejected={}, pages={}, translate_ok={}, cr3_switched=false",
+        table_status.user_page_table_count,
+        table_status.rejected_user_page_table_count,
+        table_status.total_user_page_table_pages,
+        phase16_tables_ok
+    );
+    kernel::serial_println!(
+        "Phase16-PageTables: tables={}, rejected={}, pages={}, translate_ok={}, cr3_switched=false",
+        table_status.user_page_table_count,
+        table_status.rejected_user_page_table_count,
+        table_status.total_user_page_table_pages,
+        phase16_tables_ok
+    );
 
     // Display performance counters at startup.
     let counters = PerformanceCounters::read();

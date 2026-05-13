@@ -64,6 +64,7 @@ pub enum ProgramLoadError {
     LoadPlanRejected,
     MappingRejected,
     FrameBackingRejected,
+    PageTableRejected,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +88,9 @@ pub struct LoaderStatus {
     pub frame_backed_image_count: u64,
     pub rejected_frame_backing_count: u64,
     pub total_frame_backed_pages: u64,
+    pub user_page_table_count: u64,
+    pub rejected_user_page_table_count: u64,
+    pub total_user_page_table_pages: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +114,12 @@ pub struct FrameBackedProgramImage {
     pub backed: crate::frame_backing::FrameBackedImage,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserPageTableProgramImage {
+    pub backed: FrameBackedProgramImage,
+    pub page_table: crate::user_memory::InactiveUserPageTable,
+}
+
 static LAUNCH_COUNT: AtomicU64 = AtomicU64::new(0);
 static FAILED_LAUNCH_COUNT: AtomicU64 = AtomicU64::new(0);
 static DENIED_LAUNCH_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -125,6 +135,9 @@ static ZERO_FILLED_BYTES: AtomicU64 = AtomicU64::new(0);
 static FRAME_BACKED_IMAGE_COUNT: AtomicU64 = AtomicU64::new(0);
 static REJECTED_FRAME_BACKING_COUNT: AtomicU64 = AtomicU64::new(0);
 static TOTAL_FRAME_BACKED_PAGES: AtomicU64 = AtomicU64::new(0);
+static USER_PAGE_TABLE_COUNT: AtomicU64 = AtomicU64::new(0);
+static REJECTED_USER_PAGE_TABLE_COUNT: AtomicU64 = AtomicU64::new(0);
+static TOTAL_USER_PAGE_TABLE_PAGES: AtomicU64 = AtomicU64::new(0);
 
 pub fn parse_manifest(contents: &str) -> Result<ProgramManifest, ProgramLoadError> {
     let mut lines = contents.lines();
@@ -286,6 +299,9 @@ pub fn status() -> LoaderStatus {
         frame_backed_image_count: FRAME_BACKED_IMAGE_COUNT.load(Ordering::Relaxed),
         rejected_frame_backing_count: REJECTED_FRAME_BACKING_COUNT.load(Ordering::Relaxed),
         total_frame_backed_pages: TOTAL_FRAME_BACKED_PAGES.load(Ordering::Relaxed),
+        user_page_table_count: USER_PAGE_TABLE_COUNT.load(Ordering::Relaxed),
+        rejected_user_page_table_count: REJECTED_USER_PAGE_TABLE_COUNT.load(Ordering::Relaxed),
+        total_user_page_table_pages: TOTAL_USER_PAGE_TABLE_PAGES.load(Ordering::Relaxed),
     }
 }
 
@@ -511,6 +527,46 @@ pub fn phase15_smoke_check() -> bool {
         && after_frames.allocated_frames > before_frames.allocated_frames
 }
 
+pub fn build_user_page_table(
+    credentials: crate::security::Credentials,
+    name: &str,
+) -> Result<UserPageTableProgramImage, ProgramLoadError> {
+    let backed = back_mapped_program(credentials, name)?;
+    let id = crate::user_memory::UserPageTableId::from_raw(
+        USER_PAGE_TABLE_COUNT.load(Ordering::Relaxed).saturating_add(1),
+    );
+    let page_table =
+        crate::user_memory::build_inactive_page_table(id, &backed.backed).map_err(|_| {
+            REJECTED_USER_PAGE_TABLE_COUNT.fetch_add(1, Ordering::Relaxed);
+            ProgramLoadError::PageTableRejected
+        })?;
+
+    USER_PAGE_TABLE_COUNT.fetch_add(1, Ordering::Relaxed);
+    TOTAL_USER_PAGE_TABLE_PAGES.fetch_add(page_table.mapped_pages as u64, Ordering::Relaxed);
+    record_page_table_process(credentials, &backed.mapped.prepared, &backed.backed, &page_table);
+
+    Ok(UserPageTableProgramImage { backed, page_table })
+}
+
+pub fn phase16_smoke_check() -> bool {
+    let before = status();
+    let built = build_user_page_table(crate::security::Credentials::shell_user(), "hello")
+        .map(|built| {
+            built.page_table.mapped_pages > 0
+                && crate::user_memory::translate(
+                    &built.page_table,
+                    built.backed.backed.regions[0].pages[0].virtual_address,
+                )
+                .is_some()
+                && !built.page_table.cr3_switch_ready
+        })
+        .unwrap_or(false);
+    let after = status();
+    built
+        && after.user_page_table_count > before.user_page_table_count
+        && after.total_user_page_table_pages > before.total_user_page_table_pages
+}
+
 fn validate_manifest_image(
     manifest: &ProgramManifest,
 ) -> (Option<crate::exec_image::ExecutableImage>, Option<crate::exec_image::ImageLoadError>) {
@@ -654,6 +710,46 @@ fn record_frame_backed_process(
     };
     if let Some(pid) = crate::task::process::create_kernel_process_with_metadata(
         "image-frame-backed",
+        tick,
+        credentials,
+        metadata,
+        load,
+    ) {
+        let _ = crate::task::process::set_process_state(pid, crate::task::process::ProcessState::Blocked);
+    }
+}
+
+fn record_page_table_process(
+    credentials: crate::security::Credentials,
+    prepared: &PreparedProgramImage,
+    backed: &crate::frame_backing::FrameBackedImage,
+    page_table: &crate::user_memory::InactiveUserPageTable,
+) {
+    let tick =
+        crate::performance::metrics::TICK_COUNTER.load(core::sync::atomic::Ordering::Relaxed);
+    let metadata = crate::task::process::ProcessImageMetadata {
+        source_path: static_source_path(&prepared.program.source_path),
+        format: prepared.image.format,
+        entry_point: prepared.image.entry_point,
+        segment_count: prepared.image.segments.len(),
+        address_space_id: Some(backed.address_space_id),
+        trust: prepared.image.trust,
+        owner: credentials,
+    };
+    let load = crate::task::process::ProcessLoadMetadata {
+        state: crate::task::process::ProcessLoadState::PageTableReady,
+        source_path: static_source_path(&prepared.image.source_path),
+        entry_point: prepared.load_plan.entry_point,
+        planned_pages: page_table.mapped_pages,
+        region_count: backed.regions.len(),
+        stack_pages: prepared.load_plan.stack_pages,
+        mapping_id: Some(backed.mapping_id),
+        copied_bytes: backed.copied_bytes,
+        zero_filled_bytes: backed.zero_filled_bytes,
+        executable_pages: page_table.executable_pages,
+    };
+    if let Some(pid) = crate::task::process::create_kernel_process_with_metadata(
+        "image-page-table",
         tick,
         credentials,
         metadata,

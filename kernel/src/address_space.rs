@@ -43,6 +43,7 @@ pub enum MappingState {
     Reserved,
     MappedStub,
     FrameBacked,
+    PageTableMapped,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

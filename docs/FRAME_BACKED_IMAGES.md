@@ -1,6 +1,6 @@
 # Frame-Backed Images
 
-Phase 15 converts Phase 13 mapped-image stubs into frame-backed image records. These records consume owned frames from the Phase 14 frame ownership service and attach them to the mapped executable pages.
+Phase 15 converts Phase 13 mapped-image stubs into frame-backed image records. These records consume owned frames from the Phase 14 frame ownership service and attach them to the mapped executable pages. Phase 16 uses these records to build inactive user page-table descriptors.
 
 ## Backed Image Contents
 
@@ -45,4 +45,4 @@ Phase15-FrameBackedImage: backed=..., rejected=..., pages=..., frame_allocated=.
 
 ## Safety Boundary
 
-`run hello` remains unsupported in Phase 15. Frame-backed records are the data needed by later page-table work, not executable user mappings.
+`run hello` remains unsupported in Phase 15. Frame-backed records are the data needed by later page-table work, not executable user mappings. Phase 16 adds descriptor translation, but still does not switch CR3.

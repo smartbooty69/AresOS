@@ -268,6 +268,18 @@ Checklist: `docs/phase-15-checklist.md`
 
 Frame-backed image deep dive: `docs/FRAME_BACKED_IMAGES.md`
 
+### Phase 16 — Inactive User Page Tables
+
+* inactive user page-table descriptors for frame-backed images
+* virtual-to-physical translation validation
+* blocked `PageTableReady` process metadata without CR3 switching
+
+Status: ✅ Complete (validated 2026-05-13; inactive page-table smoke)
+
+Checklist: `docs/phase-16-checklist.md`
+
+User page-table deep dive: `docs/USER_PAGE_TABLES.md`
+
 ---
 
 # Project Structure
@@ -289,6 +301,7 @@ AresOS
 │   │   ├── address_space.rs   descriptor-only process address spaces
 │   │   ├── load_plan.rs       executable load-plan accounting
 │   │   ├── mapping_stub.rs    deterministic executable mapping stubs
+│   │   ├── user_memory.rs     inactive user page-table descriptors
 │   │   ├── lib.rs             shared kernel modules
 │   │   ├── interrupts.rs      IDT + IRQ handlers
 │   │   ├── memory.rs          paging + frame allocator
@@ -421,6 +434,12 @@ Phase 15 frame-backed image check:
 
 ```
 ./scripts/phase15-frame-backing-check --timeout 20
+```
+
+Phase 16 inactive page-table check:
+
+```
+./scripts/phase16-page-table-check --timeout 20
 ```
 
 Full validation matrix (QEMU-backed):

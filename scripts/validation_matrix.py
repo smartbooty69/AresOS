@@ -168,6 +168,16 @@ def main() -> int:
             None,
         ),
         (
+            "phase16-page-table-check",
+            [
+                "python",
+                "scripts/phase16_page_table_check.py",
+                "--timeout",
+                str(args.smoke_timeout),
+            ],
+            None,
+        ),
+        (
             "phase5-soak-check",
             [
                 "python",

@@ -830,3 +830,63 @@ fn phase15_smoke_reports_frame_backed_image_status() {
     kernel::storage::format().expect("format should seed image manifests");
     assert!(kernel::task::program_loader::phase15_smoke_check());
 }
+
+#[test_case]
+fn phase16_inactive_page_table_translates_backed_pages() {
+    kernel::storage::format().expect("format should seed image manifests");
+    let built = kernel::task::program_loader::build_user_page_table(
+        security::Credentials::shell_user(),
+        "hello",
+    )
+    .expect("inactive page table should build");
+    let page = built.backed.backed.regions[0].pages[0].virtual_address;
+    assert_eq!(built.page_table.mapped_pages, built.backed.backed.total_pages);
+    assert!(built.page_table.kernel_shared);
+    assert!(!built.page_table.cr3_switch_ready);
+    assert_eq!(
+        kernel::user_memory::translate(&built.page_table, page),
+        Some(built.backed.backed.regions[0].pages[0].frame.start_address)
+    );
+    assert_eq!(
+        kernel::user_memory::translate(&built.page_table, page + 3),
+        Some(built.backed.backed.regions[0].pages[0].frame.start_address + 3)
+    );
+}
+
+#[test_case]
+fn phase16_loader_process_metadata_syscalls_and_smoke_work() {
+    kernel::storage::format().expect("format should seed image manifests");
+    let before = kernel::task::program_loader::status();
+    let built = kernel::task::program_loader::build_user_page_table(
+        security::Credentials::shell_user(),
+        "hello",
+    )
+    .expect("inactive page table should build");
+    let after = kernel::task::program_loader::status();
+    assert!(after.user_page_table_count > before.user_page_table_count);
+    assert!(after.total_user_page_table_pages > before.total_user_page_table_pages);
+
+    let has_page_table_record = process::get_all_processes_with_details()
+        .iter()
+        .any(|(_, name, state, _, owner, _, load)| {
+            *name == "image-page-table"
+                && *state == process::ProcessState::Blocked
+                && *owner == security::Credentials::shell_user()
+                && load
+                    .as_ref()
+                    .map(|load| {
+                        load.state == process::ProcessLoadState::PageTableReady
+                            && load.mapping_id == Some(built.backed.backed.mapping_id)
+                    })
+                    .unwrap_or(false)
+        });
+    assert!(has_page_table_record);
+
+    assert!(syscall::invoke_raw(syscall::SyscallId::UserPageTableCount as u64, 0).unwrap() > 0);
+    assert!(syscall::invoke_raw(syscall::SyscallId::TotalUserPageTablePages as u64, 0).unwrap() > 0);
+    assert_eq!(
+        syscall::invoke_raw(syscall::SyscallId::UserPageTableCount as u64, 1),
+        Err(syscall::SyscallError::InvalidArgument)
+    );
+    assert!(kernel::task::program_loader::phase16_smoke_check());
+}

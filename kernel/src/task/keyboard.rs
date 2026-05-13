@@ -209,6 +209,7 @@ fn execute_console_command(command: &str) {
             println!("  bin prepare <program>");
             println!("  bin map <program>");
             println!("  bin back <program>");
+            println!("  bin pagetable <program>");
             println!("  bin plans");
             println!("  bin mappings");
             println!("  frames");
@@ -250,6 +251,7 @@ fn execute_console_command(command: &str) {
                             crate::task::process::ProcessLoadState::ExecutionBlocked => "blocked",
                             crate::task::process::ProcessLoadState::MappedStub => "mapped",
                             crate::task::process::ProcessLoadState::FrameBacked => "backed",
+                            crate::task::process::ProcessLoadState::PageTableReady => "ptable",
                         })
                         .unwrap_or("-");
                     println!(
@@ -434,10 +436,26 @@ fn execute_console_command(command: &str) {
             ),
             Err(err) => println!("program frame-back error: {:?}", err),
         },
+        ["bin", "pagetable", program] => match crate::task::program_loader::build_user_page_table(
+            crate::security::current_credentials(),
+            program,
+        ) {
+            Ok(table) => println!(
+                "Inactive page table {}: asid={}, pages={}, exec={}, writable={}, readonly={}, cr3_ready={}",
+                table.page_table.id.as_u64(),
+                table.page_table.address_space_id.as_u64(),
+                table.page_table.mapped_pages,
+                table.page_table.executable_pages,
+                table.page_table.writable_pages,
+                table.page_table.read_only_pages,
+                table.page_table.cr3_switch_ready
+            ),
+            Err(err) => println!("program page-table error: {:?}", err),
+        },
         ["bin", "plans"] | ["loadplans"] => {
             let status = crate::task::program_loader::status();
             println!(
-                "Load plans: prepared={}, rejected={}, planned_pages={}, mapped={}, mapped_pages={}, backed={}, backed_pages={}, exec_blocked={}",
+                "Load plans: prepared={}, rejected={}, planned_pages={}, mapped={}, mapped_pages={}, backed={}, backed_pages={}, page_tables={}, ptable_pages={}, exec_blocked={}",
                 status.prepared_image_count,
                 status.rejected_load_plan_count,
                 status.total_planned_pages,
@@ -445,6 +463,8 @@ fn execute_console_command(command: &str) {
                 status.total_mapped_pages,
                 status.frame_backed_image_count,
                 status.total_frame_backed_pages,
+                status.user_page_table_count,
+                status.total_user_page_table_pages,
                 status.unsupported_execution_count
             );
         }
