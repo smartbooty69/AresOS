@@ -30,6 +30,11 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // Set up the kernel heap.
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialisation failed");
+    kernel::frame_ownership::init_from_memory_map(
+        &boot_info.memory_map,
+        frame_allocator.allocated_frame_count(),
+    )
+    .expect("frame ownership initialisation failed");
     kernel::task::keyboard::init_scancode_queue();
     kernel::storage::init();
     let boot_tick = kernel::performance::metrics::TICK_COUNTER.load(core::sync::atomic::Ordering::Relaxed);
@@ -181,6 +186,30 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         mapping_status.copied_bytes,
         mapping_status.zero_filled_bytes,
         phase13_mapping_ok
+    );
+    let phase14_frames_ok = kernel::frame_ownership::phase14_smoke_check();
+    let frame_status = kernel::frame_ownership::status();
+    println!(
+        "Phase14-Frames: initialized={}, tracked={}, available={}, allocated={}, allocations={}, releases={}, failures={}, smoke_ok={}",
+        frame_status.initialized,
+        frame_status.tracked_frames,
+        frame_status.available_frames,
+        frame_status.allocated_frames,
+        frame_status.allocation_count,
+        frame_status.release_count,
+        frame_status.failed_allocation_count,
+        phase14_frames_ok
+    );
+    kernel::serial_println!(
+        "Phase14-Frames: initialized={}, tracked={}, available={}, allocated={}, allocations={}, releases={}, failures={}, smoke_ok={}",
+        frame_status.initialized,
+        frame_status.tracked_frames,
+        frame_status.available_frames,
+        frame_status.allocated_frames,
+        frame_status.allocation_count,
+        frame_status.release_count,
+        frame_status.failed_allocation_count,
+        phase14_frames_ok
     );
 
     // Display performance counters at startup.

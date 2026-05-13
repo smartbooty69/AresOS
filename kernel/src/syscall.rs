@@ -33,6 +33,12 @@ pub enum SyscallId {
     TotalMappedPages = 26,
     MappedCopiedBytes = 27,
     MappedZeroFilledBytes = 28,
+    FrameTrackedCount = 29,
+    FrameAvailableCount = 30,
+    FrameAllocatedCount = 31,
+    FrameAllocationCount = 32,
+    FrameReleaseCount = 33,
+    FrameFailedAllocationCount = 34,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -217,6 +223,42 @@ pub fn invoke_raw(id: u64, arg0: u64) -> Result<u64, SyscallError> {
                 return Err(SyscallError::InvalidArgument);
             }
             Ok(crate::task::program_loader::status().zero_filled_bytes)
+        }
+        x if x == SyscallId::FrameTrackedCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::frame_ownership::status().tracked_frames as u64)
+        }
+        x if x == SyscallId::FrameAvailableCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::frame_ownership::status().available_frames as u64)
+        }
+        x if x == SyscallId::FrameAllocatedCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::frame_ownership::status().allocated_frames as u64)
+        }
+        x if x == SyscallId::FrameAllocationCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::frame_ownership::status().allocation_count)
+        }
+        x if x == SyscallId::FrameReleaseCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::frame_ownership::status().release_count)
+        }
+        x if x == SyscallId::FrameFailedAllocationCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::frame_ownership::status().failed_allocation_count)
         }
         _ => Err(SyscallError::InvalidSyscall),
     }

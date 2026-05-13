@@ -210,6 +210,7 @@ fn execute_console_command(command: &str) {
             println!("  bin map <program>");
             println!("  bin plans");
             println!("  bin mappings");
+            println!("  frames");
             println!("  ls");
             println!("  cat <path>");
             println!("  touch <path>");
@@ -441,6 +442,19 @@ fn execute_console_command(command: &str) {
                     mapping.state
                 );
             }
+        }
+        ["frames"] => {
+            let status = crate::frame_ownership::status();
+            println!(
+                "Frames: initialized={}, tracked={}, available={}, allocated={}, allocations={}, releases={}, failures={}",
+                status.initialized,
+                status.tracked_frames,
+                status.available_frames,
+                status.allocated_frames,
+                status.allocation_count,
+                status.release_count,
+                status.failed_allocation_count
+            );
         }
         ["ls"] => match crate::storage::list_files() {
             Ok(files) => {

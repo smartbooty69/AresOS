@@ -244,6 +244,18 @@ Checklist: `docs/phase-13-checklist.md`
 
 Mapping-stub deep dive: `docs/MAPPING_STUBS.md`
 
+### Phase 14 — Frame Ownership Service
+
+* persistent frame ownership registry
+* bounded physical-frame accounting after heap initialization
+* frame allocation/release counters for future executable backing
+
+Status: ✅ Complete (validated 2026-05-13; frame ownership smoke)
+
+Checklist: `docs/phase-14-checklist.md`
+
+Frame ownership deep dive: `docs/FRAME_OWNERSHIP.md`
+
 ---
 
 # Project Structure
@@ -260,6 +272,7 @@ AresOS
 │   │   ├── block.rs           block-device manager
 │   │   ├── security.rs        identity + permission policy primitives
 │   │   ├── exec_image.rs      executable image parser and validation
+│   │   ├── frame_ownership.rs persistent frame ownership bookkeeping
 │   │   ├── address_space.rs   descriptor-only process address spaces
 │   │   ├── load_plan.rs       executable load-plan accounting
 │   │   ├── mapping_stub.rs    deterministic executable mapping stubs
@@ -383,6 +396,12 @@ Phase 13 mapping-stub check:
 
 ```
 ./scripts/phase13-mapping-stub-check --timeout 20
+```
+
+Phase 14 frame ownership check:
+
+```
+./scripts/phase14-frame-check --timeout 20
 ```
 
 Full validation matrix (QEMU-backed):

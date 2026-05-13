@@ -30,6 +30,10 @@ fn main(boot_info: &'static BootInfo) -> ! {
         unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
 
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialisation failed");
+    let _ = kernel::frame_ownership::init_from_memory_map(
+        &boot_info.memory_map,
+        frame_allocator.allocated_frame_count(),
+    );
 
     test_main();
     hlt_loop();
@@ -719,5 +723,39 @@ fn phase13_smoke_preserves_unsupported_execution() {
     assert_eq!(
         kernel::task::userspace::run_program("hello", &[]),
         Err("unsupported executable image")
+    );
+}
+
+#[test_case]
+fn phase14_frame_ownership_allocates_releases_and_reports_status() {
+    let before = kernel::frame_ownership::status();
+    assert!(before.initialized);
+    assert!(before.tracked_frames > 0);
+    assert!(before.available_frames > 0);
+
+    let frame = kernel::frame_ownership::allocate_frame(kernel::frame_ownership::FrameOwner::Test)
+        .expect("owned frame should allocate");
+    assert_eq!(frame.start_address % 4096, 0);
+
+    let allocated = kernel::frame_ownership::status();
+    assert_eq!(
+        allocated.allocated_frames,
+        before.allocated_frames.saturating_add(1)
+    );
+
+    kernel::frame_ownership::release_frame(frame.token).expect("owned frame should release");
+    let released = kernel::frame_ownership::status();
+    assert_eq!(released.allocated_frames, before.allocated_frames);
+    assert!(released.release_count > before.release_count);
+}
+
+#[test_case]
+fn phase14_frame_status_syscalls_and_smoke_work() {
+    assert!(kernel::frame_ownership::phase14_smoke_check());
+    assert!(syscall::invoke_raw(syscall::SyscallId::FrameTrackedCount as u64, 0).unwrap() > 0);
+    assert!(syscall::invoke_raw(syscall::SyscallId::FrameAvailableCount as u64, 0).unwrap() > 0);
+    assert_eq!(
+        syscall::invoke_raw(syscall::SyscallId::FrameTrackedCount as u64, 1),
+        Err(syscall::SyscallError::InvalidArgument)
     );
 }

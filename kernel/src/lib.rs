@@ -19,6 +19,7 @@ pub mod address_space;
 pub mod block;
 pub mod device;
 pub mod exec_image;
+pub mod frame_ownership;
 pub mod gdt;
 pub mod interrupts;
 pub mod load_plan;
