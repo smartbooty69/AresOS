@@ -80,4 +80,4 @@ By default, runtime storage uses `ManagedBlockDevice`, which delegates sector I/
 - FAT/ext-style filesystem compatibility
 - Journaling and crash consistency
 - File permissions and ownership
-- Loading executable program images from storage
+- Raw ELF/binary executable images from storage

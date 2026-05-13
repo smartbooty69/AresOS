@@ -184,6 +184,18 @@ Checklist: `docs/phase-8-checklist.md`
 
 Device deep dive: `docs/DEVICES.md`
 
+### Phase 9 — Stored Program Loader
+
+* executable manifest format
+* `/bin/*` program discovery
+* file-backed launch path for built-in program entries
+
+Status: ✅ Complete (validated 2026-05-13; stored manifests + loader smoke)
+
+Checklist: `docs/phase-9-checklist.md`
+
+Program loader deep dive: `docs/PROGRAMS.md`
+
 ---
 
 # Project Structure
@@ -288,6 +300,12 @@ Phase 8 device/block check:
 
 ```
 ./scripts/phase8-device-check --timeout 20
+```
+
+Phase 9 stored program loader check:
+
+```
+./scripts/phase9-loader-check --timeout 20
 ```
 
 Full validation matrix (QEMU-backed):

@@ -73,4 +73,4 @@ python scripts/validation_matrix.py --soak-duration 20 --latency-duration 20
 - DMA and interrupt-driven block I/O
 - MSI/MSI-X setup
 - Driver binding based on PCI BARs and capabilities
-- ELF/program loading from storage
+- Raw ELF/binary loading from storage
