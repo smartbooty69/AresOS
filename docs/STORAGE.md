@@ -1,6 +1,6 @@
 # Storage Design (Phase 7)
 
-AresOS Phase 7 introduces a small persistent storage stack on top of a block-device boundary. The implementation intentionally uses an in-memory block device first, so filesystem semantics can stabilize before real disk hardware drivers are added.
+AresOS Phase 7 introduced a small persistent storage stack on top of a block-device boundary. Phase 8 mounts that filesystem through a managed block backend so the same filesystem API can run on driver-plumbed storage.
 
 ## Layers
 
@@ -12,6 +12,8 @@ Userspace[User Utilities] --> Syscalls
 StorageApi --> SimpleFs[SimpleFs]
 SimpleFs --> BlockDevice[BlockDevice]
 BlockDevice --> MemoryBlockDevice[MemoryBlockDevice]
+BlockDevice --> ManagedBlockDevice[ManagedBlockDevice]
+ManagedBlockDevice --> BlockManager[Block Manager]
 ```
 
 ## Filesystem Format
@@ -40,6 +42,7 @@ Primary kernel APIs live in `kernel/src/storage.rs`:
 - `delete_file(path)`
 - `info()`
 - `phase7_smoke_check()`
+- `phase8_smoke_check()`
 
 ## Shell Commands
 
@@ -64,6 +67,12 @@ The kernel emits:
 ```text
 Phase7-Storage: mounted=true, persistent_rw_ok=true
 ```
+
+## Phase 8 Backend
+
+By default, runtime storage uses `ManagedBlockDevice`, which delegates sector I/O to the active block backend. Phase 8 registers `qemu-sim-block0` through the block manager as a deterministic driver-backed backend for QEMU validation.
+
+`MemoryBlockDevice` remains available for focused filesystem tests.
 
 ## Deferred Work
 

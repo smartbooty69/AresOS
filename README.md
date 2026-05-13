@@ -172,6 +172,18 @@ Checklist: `docs/phase-7-checklist.md`
 
 Storage deep dive: `docs/STORAGE.md`
 
+### Phase 8 — Device & Block Driver Bring-Up
+
+* device registry and PCI discovery skeleton
+* block-device manager
+* QEMU-friendly driver-backed storage path
+
+Status: ✅ Complete (validated 2026-05-13; device/block smoke + storage-through-manager)
+
+Checklist: `docs/phase-8-checklist.md`
+
+Device deep dive: `docs/DEVICES.md`
+
 ---
 
 # Project Structure
@@ -184,6 +196,8 @@ AresOS
 │   ├── x86_64-unknown-none.json
 │   ├── src/
 │   │   ├── main.rs            kernel entry point
+│   │   ├── device.rs          device registry + PCI discovery skeleton
+│   │   ├── block.rs           block-device manager
 │   │   ├── lib.rs             shared kernel modules
 │   │   ├── interrupts.rs      IDT + IRQ handlers
 │   │   ├── memory.rs          paging + frame allocator
@@ -268,6 +282,12 @@ Phase 7 persistent storage check:
 
 ```
 ./scripts/phase7-storage-check --timeout 20
+```
+
+Phase 8 device/block check:
+
+```
+./scripts/phase8-device-check --timeout 20
 ```
 
 Full validation matrix (QEMU-backed):
