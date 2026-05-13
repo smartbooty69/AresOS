@@ -160,6 +160,18 @@ Status: ✅ Complete (validated 2026-05-06; shell + utilities + syscall/storage 
 
 Checklist: `docs/phase-6-checklist.md`
 
+### Phase 7 — Persistent Storage
+
+* block-device storage boundary
+* simple persistent filesystem format
+* shell and syscall file operations
+
+Status: ✅ Complete (validated 2026-05-13; remount persistence + QEMU storage smoke)
+
+Checklist: `docs/phase-7-checklist.md`
+
+Storage deep dive: `docs/STORAGE.md`
+
 ---
 
 # Project Structure
@@ -250,6 +262,12 @@ Phase 6 smoke check:
 
 ```
 ./scripts/phase6-smoke-check
+```
+
+Phase 7 persistent storage check:
+
+```
+./scripts/phase7-storage-check --timeout 20
 ```
 
 Full validation matrix (QEMU-backed):
