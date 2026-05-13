@@ -98,6 +98,16 @@ def main() -> int:
             None,
         ),
         (
+            "phase9-loader-check",
+            [
+                "python",
+                "scripts/phase9_loader_check.py",
+                "--timeout",
+                str(args.smoke_timeout),
+            ],
+            None,
+        ),
+        (
             "phase5-soak-check",
             [
                 "python",
