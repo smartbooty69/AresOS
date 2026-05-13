@@ -105,6 +105,10 @@ fn syscall_invalid_paths_are_rejected() {
         syscall::invoke_raw(syscall::SyscallId::GetTickCount as u64, 123),
         Err(syscall::SyscallError::InvalidArgument)
     );
+    assert_eq!(
+        syscall::invoke_raw(syscall::SyscallId::StorageFileCount as u64, 123),
+        Err(syscall::SyscallError::InvalidArgument)
+    );
 }
 
 #[test_case]
@@ -129,4 +133,52 @@ fn storage_and_userspace_smoke_flow() {
     let output = kernel::task::userspace::run_program("echo", &["ok", "flow"])
         .expect("echo should run");
     assert_eq!(output, "ok flow");
+
+    let fsinfo = kernel::task::userspace::run_program("fsinfo", &[])
+        .expect("fsinfo should run through storage syscalls");
+    assert!(fsinfo.contains("mounted=true"));
+}
+
+#[test_case]
+fn phase7_storage_persists_across_remount() {
+    kernel::storage::format().expect("format should succeed");
+    kernel::storage::write_file("/phase7.txt", "persistent")
+        .expect("write should succeed");
+    kernel::storage::remount().expect("remount should succeed");
+
+    let contents = kernel::storage::read_file("/phase7.txt")
+        .expect("read should succeed")
+        .expect("file should exist after remount");
+    assert_eq!(contents, "persistent");
+
+    kernel::storage::delete_file("/phase7.txt").expect("delete should succeed");
+    assert_eq!(
+        kernel::storage::read_file("/phase7.txt").expect("read should succeed"),
+        None
+    );
+}
+
+#[test_case]
+fn phase7_storage_syscall_wrappers_cover_file_lifecycle() {
+    kernel::storage::format().expect("format should succeed");
+    syscall::storage_write_file("/syscall.txt", "through-syscall")
+        .expect("storage write syscall wrapper should succeed");
+    assert_eq!(
+        syscall::storage_read_file("/syscall.txt")
+            .expect("storage read syscall wrapper should succeed"),
+        Some("through-syscall".into())
+    );
+    assert!(
+        syscall::storage_list_files()
+            .expect("storage list syscall wrapper should succeed")
+            .iter()
+            .any(|path| path == "/syscall.txt")
+    );
+    syscall::storage_delete_file("/syscall.txt")
+        .expect("storage delete syscall wrapper should succeed");
+    assert_eq!(
+        syscall::storage_read_file("/syscall.txt")
+            .expect("storage read syscall wrapper should succeed"),
+        None
+    );
 }

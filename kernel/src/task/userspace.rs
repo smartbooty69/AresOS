@@ -42,6 +42,15 @@ pub fn run_program(name: &str, args: &[&str]) -> Result<String, &'static str> {
                 ticks, procs, preemptions, tick_counter
             ))
         }
+        "fsinfo" => {
+            let mounted =
+                crate::syscall::invoke_raw(crate::syscall::SyscallId::StorageMounted as u64, 0)
+                    .map_err(|_| "syscall failed")?;
+            let files =
+                crate::syscall::invoke_raw(crate::syscall::SyscallId::StorageFileCount as u64, 0)
+                    .map_err(|_| "syscall failed")?;
+            Ok(format!("mounted={} files={}", mounted == 1, files))
+        }
         _ => Err("unknown user program"),
     }
 }

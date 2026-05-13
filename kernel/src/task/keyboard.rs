@@ -199,9 +199,15 @@ fn execute_console_command(command: &str) {
             println!("  ps");
             println!("  kill <pid>");
             println!("  metrics");
-            println!("  run <echo|time|sysinfo> [args...]");
+            println!("  run <echo|time|sysinfo|fsinfo> [args...]");
             println!("  ls");
             println!("  cat <path>");
+            println!("  touch <path>");
+            println!("  write <path> <text>");
+            println!("  rm <path>");
+            println!("  mount");
+            println!("  format");
+            println!("  fsinfo");
             println!("  sched show");
             println!("  sched quantum <ticks>");
             println!("  sched fairness <ticks>");
@@ -248,22 +254,55 @@ fn execute_console_command(command: &str) {
             Ok(output) => println!("{}", output),
             Err(err) => println!("run error: {}", err),
         },
-        ["ls"] => {
-            match crate::storage::list_files() {
-                Ok(files) => {
-                    for file in files {
-                        println!("{}", file);
-                    }
-                }
-                Err(crate::storage::StorageError::NotMounted) => {
-                    println!("Storage not mounted");
+        ["ls"] => match crate::storage::list_files() {
+            Ok(files) => {
+                for file in files {
+                    println!("{}", file);
                 }
             }
-        }
+            Err(err) => println!("ls error: {}", err),
+        },
         ["cat", path] => match crate::storage::read_file(path) {
             Ok(Some(contents)) => println!("{}", contents),
             Ok(None) => println!("No such file: {}", path),
-            Err(crate::storage::StorageError::NotMounted) => println!("Storage not mounted"),
+            Err(err) => println!("cat error: {}", err),
+        },
+        ["touch", path] => match crate::storage::create_file(path) {
+            Ok(()) => println!("Created {}", path),
+            Err(crate::storage::StorageError::AlreadyExists) => println!("File already exists: {}", path),
+            Err(err) => println!("touch error: {}", err),
+        },
+        ["write", path, contents @ ..] if !contents.is_empty() => {
+            let text = join_parts(contents);
+            match crate::storage::write_file(path, &text) {
+                Ok(()) => println!("Wrote {}", path),
+                Err(err) => println!("write error: {}", err),
+            }
+        }
+        ["write", ..] => println!("Usage: write <path> <text>"),
+        ["rm", path] => match crate::storage::delete_file(path) {
+            Ok(()) => println!("Removed {}", path),
+            Err(err) => println!("rm error: {}", err),
+        },
+        ["mount"] => match crate::storage::remount() {
+            Ok(()) => println!("Storage mounted"),
+            Err(err) => println!("mount error: {}", err),
+        },
+        ["format"] => match crate::storage::format() {
+            Ok(()) => println!("Storage formatted"),
+            Err(err) => println!("format error: {}", err),
+        },
+        ["fsinfo"] => match crate::storage::info() {
+            Ok(info) => println!(
+                "FS: mounted={}, files={}/{}, free_slots={}, capacity_bytes={}, max_file_size={}",
+                info.mounted,
+                info.file_count,
+                info.max_files,
+                info.free_slots,
+                info.capacity_bytes,
+                info.max_file_size
+            ),
+            Err(err) => println!("fsinfo error: {}", err),
         },
         ["sched", "show"] => {
             let config = crate::task::scheduler::runtime_config();
@@ -327,6 +366,17 @@ fn parse_pid(value: &str) -> Result<u64, &'static str> {
     Ok(pid)
 }
 
+fn join_parts(parts: &[&str]) -> String {
+    let mut out = String::new();
+    for (index, part) in parts.iter().enumerate() {
+        if index > 0 {
+            out.push(' ');
+        }
+        out.push_str(part);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_pid;
@@ -344,6 +394,11 @@ mod tests {
     #[test_case]
     fn parse_pid_accepts_positive_ids() {
         assert_eq!(parse_pid("42"), Ok(42));
+    }
+
+    #[test_case]
+    fn join_parts_preserves_spaces_between_words() {
+        assert_eq!(super::join_parts(&["hello", "phase", "7"]), "hello phase 7");
     }
 
     #[test_case]

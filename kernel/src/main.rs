@@ -56,6 +56,17 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         readme_smoke_ok,
         run_smoke_ok
     );
+    let phase7_storage_ok = kernel::storage::phase7_smoke_check();
+    println!(
+        "Phase7-Storage: mounted={}, persistent_rw_ok={}",
+        kernel::storage::is_mounted(),
+        phase7_storage_ok
+    );
+    kernel::serial_println!(
+        "Phase7-Storage: mounted={}, persistent_rw_ok={}",
+        kernel::storage::is_mounted(),
+        phase7_storage_ok
+    );
 
     // Display performance counters at startup.
     let counters = PerformanceCounters::read();
