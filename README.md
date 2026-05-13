@@ -196,6 +196,30 @@ Checklist: `docs/phase-9-checklist.md`
 
 Program loader deep dive: `docs/PROGRAMS.md`
 
+### Phase 10 — Permissions & Process Isolation Groundwork
+
+* static users, roles, and credential model
+* file owner/mode metadata with checked shell/syscall operations
+* executable trust fields and process ownership policy
+
+Status: ✅ Complete (validated 2026-05-13; permission denial + process ownership smoke)
+
+Checklist: `docs/phase-10-checklist.md`
+
+Security deep dive: `docs/SECURITY.md`
+
+### Phase 11 — Executable Image & Address-Space Groundwork
+
+* conservative ELF64 image validation
+* descriptor-only address-space and virtual-region model
+* image manifest discovery without unsafe binary execution
+
+Status: ✅ Complete (validated 2026-05-13; image validation + unsupported execution smoke)
+
+Checklist: `docs/phase-11-checklist.md`
+
+Executable image deep dive: `docs/EXECUTABLE_IMAGES.md`
+
 ---
 
 # Project Structure
@@ -210,6 +234,9 @@ AresOS
 │   │   ├── main.rs            kernel entry point
 │   │   ├── device.rs          device registry + PCI discovery skeleton
 │   │   ├── block.rs           block-device manager
+│   │   ├── security.rs        identity + permission policy primitives
+│   │   ├── exec_image.rs      executable image parser and validation
+│   │   ├── address_space.rs   descriptor-only process address spaces
 │   │   ├── lib.rs             shared kernel modules
 │   │   ├── interrupts.rs      IDT + IRQ handlers
 │   │   ├── memory.rs          paging + frame allocator
@@ -306,6 +333,18 @@ Phase 9 stored program loader check:
 
 ```
 ./scripts/phase9-loader-check --timeout 20
+```
+
+Phase 10 security policy check:
+
+```
+./scripts/phase10-security-check --timeout 20
+```
+
+Phase 11 executable image check:
+
+```
+./scripts/phase11-image-check --timeout 20
 ```
 
 Full validation matrix (QEMU-backed):
