@@ -305,6 +305,22 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         phase19_syscall_ok,
         phase19_syscall_ok
     );
+    let phase20_user_elf_ok = kernel::task::program_loader::phase20_smoke_check();
+    let user_elf_status = kernel::task::program_loader::status();
+    println!(
+        "Phase20-UserElf: executions={}, exits={}, rejected={}, hello_ok={}",
+        user_elf_status.user_elf_execution_count,
+        user_elf_status.user_elf_exit_count,
+        user_elf_status.rejected_user_elf_count,
+        phase20_user_elf_ok
+    );
+    kernel::serial_println!(
+        "Phase20-UserElf: executions={}, exits={}, rejected={}, hello_ok={}",
+        user_elf_status.user_elf_execution_count,
+        user_elf_status.user_elf_exit_count,
+        user_elf_status.rejected_user_elf_count,
+        phase20_user_elf_ok
+    );
 
     // Display performance counters at startup.
     let counters = PerformanceCounters::read();

@@ -431,14 +431,12 @@ fn phase11_loader_discovers_and_validates_image_programs() {
 }
 
 #[test_case]
-fn phase11_image_execution_is_blocked_until_future_phase() {
+fn phase11_image_execution_reaches_guarded_mvp() {
     kernel::storage::format().expect("format should seed image manifests");
     security::set_current_credentials(security::Credentials::shell_user());
     let before = kernel::task::program_loader::status().unsupported_execution_count;
-    assert_eq!(
-        kernel::task::userspace::run_program("hello", &[]),
-        Err("unsupported executable image")
-    );
+    let output = kernel::task::userspace::run_program("hello", &[]).expect("hello should execute");
+    assert!(output.contains("hello"));
     assert!(kernel::task::program_loader::status().unsupported_execution_count > before);
 }
 
@@ -574,10 +572,9 @@ fn phase12_syscalls_and_smoke_report_load_plan_status() {
         Err(syscall::SyscallError::InvalidArgument)
     );
     assert!(kernel::task::program_loader::phase12_smoke_check());
-    assert_eq!(
-        kernel::task::userspace::run_program("hello", &[]),
-        Err("unsupported executable image")
-    );
+    assert!(kernel::task::userspace::run_program("hello", &[])
+        .expect("hello should execute")
+        .contains("hello"));
 }
 
 #[test_case]
@@ -717,13 +714,12 @@ fn phase13_loader_map_path_process_metadata_and_syscalls() {
 }
 
 #[test_case]
-fn phase13_smoke_preserves_unsupported_execution() {
+fn phase13_smoke_preserves_guarded_execution() {
     kernel::storage::format().expect("format should seed image manifests");
     assert!(kernel::task::program_loader::phase13_smoke_check());
-    assert_eq!(
-        kernel::task::userspace::run_program("hello", &[]),
-        Err("unsupported executable image")
-    );
+    assert!(kernel::task::userspace::run_program("hello", &[])
+        .expect("hello should execute")
+        .contains("hello"));
 }
 
 #[test_case]
@@ -819,10 +815,9 @@ fn phase15_loader_status_process_metadata_and_syscalls_report_backing() {
         syscall::invoke_raw(syscall::SyscallId::FrameBackedImageCount as u64, 1),
         Err(syscall::SyscallError::InvalidArgument)
     );
-    assert_eq!(
-        kernel::task::userspace::run_program("hello", &[]),
-        Err("unsupported executable image")
-    );
+    assert!(kernel::task::userspace::run_program("hello", &[])
+        .expect("hello should execute")
+        .contains("hello"));
 }
 
 #[test_case]
@@ -1041,4 +1036,49 @@ fn phase19_loader_process_metadata_syscalls_and_smoke_work() {
         Err(syscall::SyscallError::InvalidArgument)
     );
     assert!(kernel::task::program_loader::phase19_smoke_check());
+}
+
+#[test_case]
+fn phase20_run_hello_returns_guarded_elf_output() {
+    kernel::storage::format().expect("format should seed image manifests");
+    security::set_current_credentials(security::Credentials::shell_user());
+    let output = kernel::task::userspace::run_program("hello", &[]).expect("hello should execute");
+    assert!(output.contains("hello"));
+    assert!(output.contains("exit=0"));
+}
+
+#[test_case]
+fn phase20_loader_process_metadata_syscalls_and_smoke_work() {
+    kernel::storage::format().expect("format should seed image manifests");
+    let before = kernel::task::program_loader::status();
+    let execution = kernel::task::program_loader::execute_minimal_user_elf(
+        security::Credentials::shell_user(),
+        "hello",
+    )
+    .expect("hello should execute");
+    let after = kernel::task::program_loader::status();
+    assert_eq!(execution.exit_code, 0);
+    assert!(after.user_elf_execution_count > before.user_elf_execution_count);
+    assert!(after.user_elf_exit_count > before.user_elf_exit_count);
+
+    let has_elf_record = process::get_all_processes_with_details()
+        .iter()
+        .any(|(_, name, state, _, owner, _, load)| {
+            *name == "image-user-elf"
+                && *state == process::ProcessState::Blocked
+                && *owner == security::Credentials::shell_user()
+                && load
+                    .as_ref()
+                    .map(|load| load.state == process::ProcessLoadState::UserElfExited)
+                    .unwrap_or(false)
+        });
+    assert!(has_elf_record);
+
+    assert!(syscall::invoke_raw(syscall::SyscallId::UserElfExecutionCount as u64, 0).unwrap() > 0);
+    assert!(syscall::invoke_raw(syscall::SyscallId::UserElfExitCount as u64, 0).unwrap() > 0);
+    assert_eq!(
+        syscall::invoke_raw(syscall::SyscallId::UserElfExecutionCount as u64, 1),
+        Err(syscall::SyscallError::InvalidArgument)
+    );
+    assert!(kernel::task::program_loader::phase20_smoke_check());
 }

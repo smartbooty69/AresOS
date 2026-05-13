@@ -75,6 +75,7 @@ pub enum ProcessLoadState {
     UserContextReady,
     UserTrapped,
     UserSyscallReturned,
+    UserElfExited,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

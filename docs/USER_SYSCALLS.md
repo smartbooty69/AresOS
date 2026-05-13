@@ -1,6 +1,6 @@
 # User Syscall Return ABI
 
-Phase 19 adds a user-facing syscall register-frame ABI. It preserves the existing `invoke_raw` dispatcher and wraps it with user entry and return metadata.
+Phase 19 adds a user-facing syscall register-frame ABI. It preserves the existing `invoke_raw` dispatcher and wraps it with user entry and return metadata. Phase 20 uses this controlled ABI as part of the guarded `/bin/hello` ELF MVP.
 
 ## ABI Records
 
@@ -40,4 +40,4 @@ Phase19-SyscallReturn: syscalls=..., returns=..., rejected=..., abi_ok=true, ret
 
 ## Safety Boundary
 
-Phase 19 validates syscall entry/return metadata. It does not yet execute CPU `syscall`/`sysret` instructions or run arbitrary ELF syscall instructions.
+Phase 19 validates syscall entry/return metadata. It does not yet execute CPU `syscall`/`sysret` instructions or run arbitrary ELF syscall instructions. Phase 20 runs the seeded hello path through the guarded pipeline only.

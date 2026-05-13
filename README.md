@@ -316,6 +316,18 @@ Checklist: `docs/phase-19-checklist.md`
 
 User syscall deep dive: `docs/USER_SYSCALLS.md`
 
+### Phase 20 — Minimal ELF Execution MVP
+
+* guarded `/bin/hello` ELF execution path
+* deterministic output and exit status for `run hello`
+* blocked `UserElfExited` process metadata
+
+Status: ✅ Complete (validated 2026-05-13; user ELF smoke)
+
+Checklist: `docs/phase-20-checklist.md`
+
+User ELF MVP deep dive: `docs/USER_ELF_MVP.md`
+
 ---
 
 # Project Structure
@@ -497,6 +509,12 @@ Phase 19 syscall return check:
 
 ```
 ./scripts/phase19-syscall-return-check --timeout 20
+```
+
+Phase 20 user ELF check:
+
+```
+./scripts/phase20-user-elf-check --timeout 20
 ```
 
 Full validation matrix (QEMU-backed):

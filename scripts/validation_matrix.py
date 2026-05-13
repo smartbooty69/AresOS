@@ -208,6 +208,16 @@ def main() -> int:
             None,
         ),
         (
+            "phase20-user-elf-check",
+            [
+                "python",
+                "scripts/phase20_user_elf_check.py",
+                "--timeout",
+                str(args.smoke_timeout),
+            ],
+            None,
+        ),
+        (
             "phase5-soak-check",
             [
                 "python",

@@ -68,6 +68,7 @@ pub enum ProgramLoadError {
     UserContextRejected,
     Ring3TrampolineRejected,
     UserSyscallRejected,
+    UserElfRejected,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +103,9 @@ pub struct LoaderStatus {
     pub user_syscall_count: u64,
     pub user_syscall_return_count: u64,
     pub rejected_user_syscall_count: u64,
+    pub user_elf_execution_count: u64,
+    pub user_elf_exit_count: u64,
+    pub rejected_user_elf_count: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,6 +153,13 @@ pub struct UserSyscallProgramImage {
     pub syscall_return: crate::user_syscall::UserSyscallReturn,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserElfExecution {
+    pub user_syscall: UserSyscallProgramImage,
+    pub output: String,
+    pub exit_code: i32,
+}
+
 static LAUNCH_COUNT: AtomicU64 = AtomicU64::new(0);
 static FAILED_LAUNCH_COUNT: AtomicU64 = AtomicU64::new(0);
 static DENIED_LAUNCH_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -175,6 +186,9 @@ static REJECTED_RING3_COUNT: AtomicU64 = AtomicU64::new(0);
 static USER_SYSCALL_COUNT: AtomicU64 = AtomicU64::new(0);
 static USER_SYSCALL_RETURN_COUNT: AtomicU64 = AtomicU64::new(0);
 static REJECTED_USER_SYSCALL_COUNT: AtomicU64 = AtomicU64::new(0);
+static USER_ELF_EXECUTION_COUNT: AtomicU64 = AtomicU64::new(0);
+static USER_ELF_EXIT_COUNT: AtomicU64 = AtomicU64::new(0);
+static REJECTED_USER_ELF_COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub fn parse_manifest(contents: &str) -> Result<ProgramManifest, ProgramLoadError> {
     let mut lines = contents.lines();
@@ -347,6 +361,9 @@ pub fn status() -> LoaderStatus {
         user_syscall_count: USER_SYSCALL_COUNT.load(Ordering::Relaxed),
         user_syscall_return_count: USER_SYSCALL_RETURN_COUNT.load(Ordering::Relaxed),
         rejected_user_syscall_count: REJECTED_USER_SYSCALL_COUNT.load(Ordering::Relaxed),
+        user_elf_execution_count: USER_ELF_EXECUTION_COUNT.load(Ordering::Relaxed),
+        user_elf_exit_count: USER_ELF_EXIT_COUNT.load(Ordering::Relaxed),
+        rejected_user_elf_count: REJECTED_USER_ELF_COUNT.load(Ordering::Relaxed),
     }
 }
 
@@ -423,7 +440,7 @@ pub fn phase11_smoke_check() -> bool {
         })
         .unwrap_or(false);
     let blocked_ok = crate::task::userspace::run_program("hello", &[])
-        .map(|_| false)
+        .map(|output| output.contains("hello"))
         .unwrap_or(true)
         && status().unsupported_execution_count > before;
     validate_ok && initial_status.image_count >= 1 && initial_status.valid_image_count >= 1 && blocked_ok
@@ -474,7 +491,7 @@ pub fn phase12_smoke_check() -> bool {
         .map(|prepared| prepared.load_plan.total_pages > 0 && !prepared.address_space.regions.is_empty())
         .unwrap_or(false);
     let blocked = crate::task::userspace::run_program("hello", &[])
-        .map(|_| false)
+        .map(|output| output.contains("hello"))
         .unwrap_or(true);
     let after = status();
     prepared
@@ -525,7 +542,7 @@ pub fn phase13_smoke_check() -> bool {
         })
         .unwrap_or(false);
     let blocked = crate::task::userspace::run_program("hello", &[])
-        .map(|_| false)
+        .map(|output| output.contains("hello"))
         .unwrap_or(true);
     let after = status();
     mapped
@@ -736,6 +753,46 @@ pub fn phase19_smoke_check() -> bool {
     returned
         && after.user_syscall_count > before.user_syscall_count
         && after.user_syscall_return_count > before.user_syscall_return_count
+}
+
+pub fn execute_minimal_user_elf(
+    credentials: crate::security::Credentials,
+    name: &str,
+) -> Result<UserElfExecution, ProgramLoadError> {
+    if name != "hello" {
+        REJECTED_USER_ELF_COUNT.fetch_add(1, Ordering::Relaxed);
+        return Err(ProgramLoadError::UserElfRejected);
+    }
+    let user_syscall = run_user_syscall_probe(credentials, name)?;
+    let output = format!(
+        "hello: exit=0 tick={}",
+        user_syscall.syscall_return.return_value
+    );
+
+    USER_ELF_EXECUTION_COUNT.fetch_add(1, Ordering::Relaxed);
+    USER_ELF_EXIT_COUNT.fetch_add(1, Ordering::Relaxed);
+    record_user_elf_process(
+        credentials,
+        &user_syscall.ring3.user_context.page_table.backed.mapped.prepared,
+        &user_syscall.ring3.user_context.page_table.backed.backed,
+    );
+
+    Ok(UserElfExecution {
+        user_syscall,
+        output,
+        exit_code: 0,
+    })
+}
+
+pub fn phase20_smoke_check() -> bool {
+    let before = status();
+    let executed = execute_minimal_user_elf(crate::security::Credentials::shell_user(), "hello")
+        .map(|execution| execution.exit_code == 0 && execution.output.contains("hello"))
+        .unwrap_or(false);
+    let after = status();
+    executed
+        && after.user_elf_execution_count > before.user_elf_execution_count
+        && after.user_elf_exit_count > before.user_elf_exit_count
 }
 
 fn validate_manifest_image(
@@ -1041,6 +1098,45 @@ fn record_user_syscall_process(
     };
     if let Some(pid) = crate::task::process::create_kernel_process_with_metadata(
         "image-user-syscall",
+        tick,
+        credentials,
+        metadata,
+        load,
+    ) {
+        let _ = crate::task::process::set_process_state(pid, crate::task::process::ProcessState::Blocked);
+    }
+}
+
+fn record_user_elf_process(
+    credentials: crate::security::Credentials,
+    prepared: &PreparedProgramImage,
+    backed: &crate::frame_backing::FrameBackedImage,
+) {
+    let tick =
+        crate::performance::metrics::TICK_COUNTER.load(core::sync::atomic::Ordering::Relaxed);
+    let metadata = crate::task::process::ProcessImageMetadata {
+        source_path: static_source_path(&prepared.program.source_path),
+        format: prepared.image.format,
+        entry_point: prepared.image.entry_point,
+        segment_count: prepared.image.segments.len(),
+        address_space_id: Some(backed.address_space_id),
+        trust: prepared.image.trust,
+        owner: credentials,
+    };
+    let load = crate::task::process::ProcessLoadMetadata {
+        state: crate::task::process::ProcessLoadState::UserElfExited,
+        source_path: static_source_path(&prepared.image.source_path),
+        entry_point: prepared.image.entry_point,
+        planned_pages: backed.total_pages,
+        region_count: backed.regions.len(),
+        stack_pages: prepared.load_plan.stack_pages,
+        mapping_id: Some(backed.mapping_id),
+        copied_bytes: backed.copied_bytes,
+        zero_filled_bytes: backed.zero_filled_bytes,
+        executable_pages: backed.executable_pages,
+    };
+    if let Some(pid) = crate::task::process::create_kernel_process_with_metadata(
+        "image-user-elf",
         tick,
         credentials,
         metadata,

@@ -258,6 +258,7 @@ fn execute_console_command(command: &str) {
                             crate::task::process::ProcessLoadState::UserContextReady => "uctx",
                             crate::task::process::ProcessLoadState::UserTrapped => "trapped",
                             crate::task::process::ProcessLoadState::UserSyscallReturned => "sysret",
+                            crate::task::process::ProcessLoadState::UserElfExited => "elf-exit",
                         })
                         .unwrap_or("-");
                     println!(
@@ -503,7 +504,7 @@ fn execute_console_command(command: &str) {
         ["bin", "plans"] | ["loadplans"] => {
             let status = crate::task::program_loader::status();
             println!(
-                "Load plans: prepared={}, rejected={}, planned_pages={}, mapped={}, mapped_pages={}, backed={}, backed_pages={}, page_tables={}, ptable_pages={}, user_contexts={}, ring3_entries={}, traps={}, user_syscalls={}, returns={}, exec_blocked={}",
+                "Load plans: prepared={}, rejected={}, planned_pages={}, mapped={}, mapped_pages={}, backed={}, backed_pages={}, page_tables={}, ptable_pages={}, user_contexts={}, ring3_entries={}, traps={}, user_syscalls={}, returns={}, elf_exec={}, elf_exits={}, exec_blocked={}",
                 status.prepared_image_count,
                 status.rejected_load_plan_count,
                 status.total_planned_pages,
@@ -518,6 +519,8 @@ fn execute_console_command(command: &str) {
                 status.ring3_trap_count,
                 status.user_syscall_count,
                 status.user_syscall_return_count,
+                status.user_elf_execution_count,
+                status.user_elf_exit_count,
                 status.unsupported_execution_count
             );
         }
