@@ -287,6 +287,24 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         kernel::interrupts::USER_TRAP_VECTOR,
         phase18_ring3_ok
     );
+    let phase19_syscall_ok = kernel::task::program_loader::phase19_smoke_check();
+    let user_syscall_status = kernel::task::program_loader::status();
+    println!(
+        "Phase19-SyscallReturn: syscalls={}, returns={}, rejected={}, abi_ok={}, returned_ok={}",
+        user_syscall_status.user_syscall_count,
+        user_syscall_status.user_syscall_return_count,
+        user_syscall_status.rejected_user_syscall_count,
+        phase19_syscall_ok,
+        phase19_syscall_ok
+    );
+    kernel::serial_println!(
+        "Phase19-SyscallReturn: syscalls={}, returns={}, rejected={}, abi_ok={}, returned_ok={}",
+        user_syscall_status.user_syscall_count,
+        user_syscall_status.user_syscall_return_count,
+        user_syscall_status.rejected_user_syscall_count,
+        phase19_syscall_ok,
+        phase19_syscall_ok
+    );
 
     // Display performance counters at startup.
     let counters = PerformanceCounters::read();

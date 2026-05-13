@@ -997,3 +997,48 @@ fn phase18_process_metadata_syscalls_and_smoke_work() {
     );
     assert!(kernel::task::program_loader::phase18_smoke_check());
 }
+
+#[test_case]
+fn phase19_user_syscall_abi_dispatches_and_returns() {
+    let returned = kernel::user_syscall::dispatch_from_user(kernel::user_syscall::tick_probe_frame())
+        .expect("user syscall frame should dispatch");
+    assert_eq!(returned.syscall_id, syscall::SyscallId::GetTickCount as u64);
+    assert_eq!(returned.error, None);
+    assert!(returned.returned_to_user);
+}
+
+#[test_case]
+fn phase19_loader_process_metadata_syscalls_and_smoke_work() {
+    kernel::storage::format().expect("format should seed image manifests");
+    let before = kernel::task::program_loader::status();
+    let probe = kernel::task::program_loader::run_user_syscall_probe(
+        security::Credentials::shell_user(),
+        "hello",
+    )
+    .expect("user syscall probe should run");
+    let after = kernel::task::program_loader::status();
+    assert!(probe.syscall_return.returned_to_user);
+    assert!(after.user_syscall_count > before.user_syscall_count);
+    assert!(after.user_syscall_return_count > before.user_syscall_return_count);
+
+    let has_syscall_record = process::get_all_processes_with_details()
+        .iter()
+        .any(|(_, name, state, _, owner, _, load)| {
+            *name == "image-user-syscall"
+                && *state == process::ProcessState::Blocked
+                && *owner == security::Credentials::shell_user()
+                && load
+                    .as_ref()
+                    .map(|load| load.state == process::ProcessLoadState::UserSyscallReturned)
+                    .unwrap_or(false)
+        });
+    assert!(has_syscall_record);
+
+    assert!(syscall::invoke_raw(syscall::SyscallId::UserSyscallCount as u64, 0).unwrap() > 0);
+    assert!(syscall::invoke_raw(syscall::SyscallId::UserSyscallReturnCount as u64, 0).unwrap() > 0);
+    assert_eq!(
+        syscall::invoke_raw(syscall::SyscallId::UserSyscallCount as u64, 1),
+        Err(syscall::SyscallError::InvalidArgument)
+    );
+    assert!(kernel::task::program_loader::phase19_smoke_check());
+}

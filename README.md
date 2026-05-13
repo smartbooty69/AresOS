@@ -304,6 +304,18 @@ Checklist: `docs/phase-18-checklist.md`
 
 Ring 3 trampoline deep dive: `docs/RING3_TRAMPOLINE.md`
 
+### Phase 19 — Syscall Entry And Return ABI
+
+* user syscall register-frame ABI
+* syscall dispatch return metadata
+* blocked `UserSyscallReturned` process metadata
+
+Status: ✅ Complete (validated 2026-05-13; syscall return smoke)
+
+Checklist: `docs/phase-19-checklist.md`
+
+User syscall deep dive: `docs/USER_SYSCALLS.md`
+
 ---
 
 # Project Structure
@@ -328,6 +340,7 @@ AresOS
 │   │   ├── mapping_stub.rs    deterministic executable mapping stubs
 │   │   ├── user_context.rs    user entry-frame descriptors
 │   │   ├── user_memory.rs     inactive user page-table descriptors
+│   │   ├── user_syscall.rs    user syscall ABI descriptors
 │   │   ├── lib.rs             shared kernel modules
 │   │   ├── interrupts.rs      IDT + IRQ handlers
 │   │   ├── memory.rs          paging + frame allocator
@@ -478,6 +491,12 @@ Phase 18 controlled Ring 3 check:
 
 ```
 ./scripts/phase18-ring3-check --timeout 20
+```
+
+Phase 19 syscall return check:
+
+```
+./scripts/phase19-syscall-return-check --timeout 20
 ```
 
 Full validation matrix (QEMU-backed):

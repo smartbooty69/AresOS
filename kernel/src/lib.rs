@@ -35,6 +35,7 @@ pub mod syscall;
 pub mod task;
 pub mod user_context;
 pub mod user_memory;
+pub mod user_syscall;
 pub mod vga_buffer;
 
 use core::panic::PanicInfo;

@@ -212,6 +212,7 @@ fn execute_console_command(command: &str) {
             println!("  bin pagetable <program>");
             println!("  bin userctx <program>");
             println!("  bin ring3 <program>");
+            println!("  bin usyscall <program>");
             println!("  bin plans");
             println!("  bin mappings");
             println!("  frames");
@@ -256,6 +257,7 @@ fn execute_console_command(command: &str) {
                             crate::task::process::ProcessLoadState::PageTableReady => "ptable",
                             crate::task::process::ProcessLoadState::UserContextReady => "uctx",
                             crate::task::process::ProcessLoadState::UserTrapped => "trapped",
+                            crate::task::process::ProcessLoadState::UserSyscallReturned => "sysret",
                         })
                         .unwrap_or("-");
                     println!(
@@ -485,10 +487,23 @@ fn execute_console_command(command: &str) {
             ),
             Err(err) => println!("program ring3 error: {:?}", err),
         },
+        ["bin", "usyscall", program] => match crate::task::program_loader::run_user_syscall_probe(
+            crate::security::current_credentials(),
+            program,
+        ) {
+            Ok(probe) => println!(
+                "User syscall: id={}, return={}, error={:?}, returned={}",
+                probe.syscall_return.syscall_id,
+                probe.syscall_return.return_value,
+                probe.syscall_return.error,
+                probe.syscall_return.returned_to_user
+            ),
+            Err(err) => println!("program user-syscall error: {:?}", err),
+        },
         ["bin", "plans"] | ["loadplans"] => {
             let status = crate::task::program_loader::status();
             println!(
-                "Load plans: prepared={}, rejected={}, planned_pages={}, mapped={}, mapped_pages={}, backed={}, backed_pages={}, page_tables={}, ptable_pages={}, user_contexts={}, ring3_entries={}, traps={}, exec_blocked={}",
+                "Load plans: prepared={}, rejected={}, planned_pages={}, mapped={}, mapped_pages={}, backed={}, backed_pages={}, page_tables={}, ptable_pages={}, user_contexts={}, ring3_entries={}, traps={}, user_syscalls={}, returns={}, exec_blocked={}",
                 status.prepared_image_count,
                 status.rejected_load_plan_count,
                 status.total_planned_pages,
@@ -501,6 +516,8 @@ fn execute_console_command(command: &str) {
                 status.user_context_count,
                 status.ring3_entry_count,
                 status.ring3_trap_count,
+                status.user_syscall_count,
+                status.user_syscall_return_count,
                 status.unsupported_execution_count
             );
         }

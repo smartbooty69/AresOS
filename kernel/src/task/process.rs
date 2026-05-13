@@ -12,7 +12,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use lazy_static::lazy_static;
 use spin::Mutex;
 
-const DEFAULT_MAX_PROCESSES: usize = 256;
+const DEFAULT_MAX_PROCESSES: usize = 1024;
 static MAX_PROCESSES_CONFIG: AtomicUsize = AtomicUsize::new(DEFAULT_MAX_PROCESSES);
 
 /// Process identifier: unique per-process handle.
@@ -74,6 +74,7 @@ pub enum ProcessLoadState {
     PageTableReady,
     UserContextReady,
     UserTrapped,
+    UserSyscallReturned,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

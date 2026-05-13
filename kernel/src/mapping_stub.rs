@@ -13,7 +13,7 @@ use crate::{
     security::Credentials,
 };
 
-const MAX_MAPPED_IMAGES: usize = 16;
+const MAX_MAPPED_IMAGES: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MappingId(u64);

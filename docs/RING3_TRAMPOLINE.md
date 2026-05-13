@@ -1,6 +1,6 @@
 # Controlled Ring 3 Trampoline
 
-Phase 18 adds a controlled trampoline result path for user-entry validation. It records that a prepared user context entered the controlled path and trapped back through the reserved user trap vector.
+Phase 18 adds a controlled trampoline result path for user-entry validation. It records that a prepared user context entered the controlled path and trapped back through the reserved user trap vector. Phase 19 builds on this with user syscall return metadata.
 
 ## Trampoline Result
 
@@ -41,4 +41,4 @@ Phase18-Ring3: entries=..., traps=..., rejected=..., trap_vector=128, survived=t
 
 ## Safety Boundary
 
-Phase 18 validates the controlled trampoline path and trap metadata. It does not run arbitrary ELF code and does not yet expose a syscall return ABI for user programs.
+Phase 18 validates the controlled trampoline path and trap metadata. It does not run arbitrary ELF code. Phase 19 exposes a syscall return ABI for a controlled probe, but still does not execute arbitrary ELF syscall instructions.

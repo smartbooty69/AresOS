@@ -5,7 +5,7 @@ use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
 use lazy_static::lazy_static;
 use spin::Mutex;
 
-pub const MAX_TRACKED_FRAMES: usize = 128;
+pub const MAX_TRACKED_FRAMES: usize = 512;
 const PAGE_SIZE: u64 = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -50,6 +50,9 @@ pub enum SyscallId {
     Ring3EntryCount = 43,
     Ring3TrapCount = 44,
     RejectedRing3Count = 45,
+    UserSyscallCount = 46,
+    UserSyscallReturnCount = 47,
+    RejectedUserSyscallCount = 48,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -336,6 +339,24 @@ pub fn invoke_raw(id: u64, arg0: u64) -> Result<u64, SyscallError> {
                 return Err(SyscallError::InvalidArgument);
             }
             Ok(crate::task::program_loader::status().rejected_ring3_count)
+        }
+        x if x == SyscallId::UserSyscallCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::task::program_loader::status().user_syscall_count)
+        }
+        x if x == SyscallId::UserSyscallReturnCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::task::program_loader::status().user_syscall_return_count)
+        }
+        x if x == SyscallId::RejectedUserSyscallCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::task::program_loader::status().rejected_user_syscall_count)
         }
         _ => Err(SyscallError::InvalidSyscall),
     }

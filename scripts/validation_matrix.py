@@ -198,6 +198,16 @@ def main() -> int:
             None,
         ),
         (
+            "phase19-syscall-return-check",
+            [
+                "python",
+                "scripts/phase19_syscall_return_check.py",
+                "--timeout",
+                str(args.smoke_timeout),
+            ],
+            None,
+        ),
+        (
             "phase5-soak-check",
             [
                 "python",
