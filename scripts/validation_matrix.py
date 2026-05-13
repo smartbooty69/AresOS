@@ -88,6 +88,16 @@ def main() -> int:
             None,
         ),
         (
+            "phase8-device-check",
+            [
+                "python",
+                "scripts/phase8_device_check.py",
+                "--timeout",
+                str(args.smoke_timeout),
+            ],
+            None,
+        ),
+        (
             "phase5-soak-check",
             [
                 "python",
