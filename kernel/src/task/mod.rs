@@ -7,6 +7,7 @@ pub mod context;
 pub mod executor;
 pub mod keyboard;
 pub mod process;
+pub mod program_loader;
 pub mod scheduler;
 pub mod timer;
 pub mod userspace;

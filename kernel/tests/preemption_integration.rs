@@ -217,3 +217,64 @@ fn phase8_device_syscalls_report_counts() {
         Err(syscall::SyscallError::InvalidArgument)
     );
 }
+
+#[test_case]
+fn phase9_program_manifest_parser_rejects_invalid_records() {
+    use kernel::task::program_loader::{parse_manifest, ProgramKind, ProgramLoadError};
+
+    let valid = parse_manifest(
+        "ares-exec-v1\nname=echo\nkind=builtin-alias\nentry=echo\ndescription=Echo text",
+    )
+    .expect("valid manifest should parse");
+    assert_eq!(valid.name, "echo");
+    assert_eq!(valid.kind, ProgramKind::BuiltinAlias);
+    assert_eq!(
+        parse_manifest("bad\nname=echo\nkind=builtin-alias\nentry=echo"),
+        Err(ProgramLoadError::InvalidVersion)
+    );
+    assert_eq!(
+        parse_manifest("ares-exec-v1\nkind=builtin-alias\nentry=echo"),
+        Err(ProgramLoadError::MissingName)
+    );
+}
+
+#[test_case]
+fn phase9_loader_discovers_bin_programs() {
+    kernel::storage::format().expect("format should seed executable manifests");
+    let programs = kernel::task::program_loader::discover_programs();
+    assert!(programs.iter().any(|program| program.name == "echo"));
+    assert!(programs.iter().any(|program| program.source_path == "/bin/fsinfo"));
+}
+
+#[test_case]
+fn phase9_run_program_uses_loader_path() {
+    kernel::storage::format().expect("format should seed executable manifests");
+    let before = kernel::task::program_loader::status().launch_count;
+    let output = kernel::task::userspace::run_program("echo", &["from", "loader"])
+        .expect("echo should run through loader");
+    assert_eq!(output, "from loader");
+    assert!(kernel::task::program_loader::status().launch_count > before);
+}
+
+#[test_case]
+fn phase9_malformed_program_file_does_not_panic() {
+    kernel::storage::format().expect("format should succeed");
+    kernel::storage::write_file("/bin/bad", "not-a-manifest").expect("write should succeed");
+    let programs = kernel::task::program_loader::discover_programs();
+    assert!(!programs.iter().any(|program| program.name == "bad"));
+    assert_eq!(
+        kernel::task::program_loader::program_info("bad"),
+        Err(kernel::task::program_loader::ProgramLoadError::NotFound)
+    );
+}
+
+#[test_case]
+fn phase9_loader_syscalls_report_status() {
+    kernel::storage::format().expect("format should seed executable manifests");
+    assert!(syscall::invoke_raw(syscall::SyscallId::ProgramCount as u64, 0).unwrap() >= 4);
+    assert_eq!(
+        syscall::invoke_raw(syscall::SyscallId::ProgramLaunchCount as u64, 1),
+        Err(syscall::SyscallError::InvalidArgument)
+    );
+    assert!(kernel::task::program_loader::phase9_smoke_check());
+}

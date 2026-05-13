@@ -200,6 +200,9 @@ fn execute_console_command(command: &str) {
             println!("  kill <pid>");
             println!("  metrics");
             println!("  run <echo|time|sysinfo|fsinfo> [args...]");
+            println!("  programs");
+            println!("  bin list");
+            println!("  bin info <program>");
             println!("  ls");
             println!("  cat <path>");
             println!("  touch <path>");
@@ -257,6 +260,31 @@ fn execute_console_command(command: &str) {
         ["run", program, args @ ..] => match crate::task::userspace::run_program(program, args) {
             Ok(output) => println!("{}", output),
             Err(err) => println!("run error: {}", err),
+        },
+        ["programs"] | ["bin", "list"] => {
+            let programs = crate::task::program_loader::discover_programs();
+            if programs.is_empty() {
+                println!("No stored programs discovered");
+            } else {
+                for program in programs {
+                    println!(
+                        "{} -> {} ({})",
+                        program.name, program.entry, program.source_path
+                    );
+                }
+            }
+            let status = crate::task::program_loader::status();
+            println!(
+                "Program loader: programs={}, launches={}, failed_launches={}",
+                status.program_count, status.launch_count, status.failed_launch_count
+            );
+        }
+        ["bin", "info", program] => match crate::task::program_loader::program_info(program) {
+            Ok(info) => println!(
+                "Program {}: path={}, kind={:?}, entry={}, description={}",
+                info.name, info.source_path, info.kind, info.entry, info.description
+            ),
+            Err(err) => println!("program info error: {:?}", err),
         },
         ["ls"] => match crate::storage::list_files() {
             Ok(files) => {

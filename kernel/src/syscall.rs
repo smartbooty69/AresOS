@@ -13,6 +13,9 @@ pub enum SyscallId {
     StorageFormat = 6,
     DeviceCount = 7,
     BlockDeviceCount = 8,
+    ProgramCount = 9,
+    ProgramLaunchCount = 10,
+    ProgramFailedLaunchCount = 11,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +81,24 @@ pub fn invoke_raw(id: u64, arg0: u64) -> Result<u64, SyscallError> {
             }
             Ok(crate::block::list_block_devices().len() as u64)
         }
+        x if x == SyscallId::ProgramCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::task::program_loader::status().program_count as u64)
+        }
+        x if x == SyscallId::ProgramLaunchCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::task::program_loader::status().launch_count)
+        }
+        x if x == SyscallId::ProgramFailedLaunchCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::task::program_loader::status().failed_launch_count)
+        }
         _ => Err(SyscallError::InvalidSyscall),
     }
 }
@@ -106,6 +127,10 @@ pub fn block_devices() -> Vec<crate::block::BlockDeviceInfo> {
     crate::block::list_block_devices()
 }
 
+pub fn loader_status() -> crate::task::program_loader::LoaderStatus {
+    crate::task::program_loader::status()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,6 +154,7 @@ mod tests {
         assert!(invoke_raw(SyscallId::StorageFileCount as u64, 0).unwrap() > 0);
         assert!(invoke_raw(SyscallId::DeviceCount as u64, 0).unwrap() > 0);
         assert!(invoke_raw(SyscallId::BlockDeviceCount as u64, 0).unwrap() > 0);
+        assert!(invoke_raw(SyscallId::ProgramCount as u64, 0).unwrap() > 0);
     }
 
     #[test_case]

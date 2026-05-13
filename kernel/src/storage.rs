@@ -495,10 +495,22 @@ pub fn phase8_smoke_check() -> bool {
 fn seed_bootstrap_files<D: BlockDevice>(fs: &mut SimpleFs<D>) -> Result<(), StorageError> {
     for (path, contents) in [
         ("/README.txt", "AresOS persistent storage"),
-        ("/bin/echo", "builtin: echo"),
-        ("/bin/time", "builtin: time"),
-        ("/bin/sysinfo", "builtin: sysinfo"),
-        ("/bin/fsinfo", "builtin: fsinfo"),
+        (
+            "/bin/echo",
+            "ares-exec-v1\nname=echo\nkind=builtin-alias\nentry=echo\ndescription=Print arguments",
+        ),
+        (
+            "/bin/time",
+            "ares-exec-v1\nname=time\nkind=builtin-alias\nentry=time\ndescription=Show uptime",
+        ),
+        (
+            "/bin/sysinfo",
+            "ares-exec-v1\nname=sysinfo\nkind=builtin-alias\nentry=sysinfo\ndescription=Show system metrics",
+        ),
+        (
+            "/bin/fsinfo",
+            "ares-exec-v1\nname=fsinfo\nkind=builtin-alias\nentry=fsinfo\ndescription=Show filesystem status",
+        ),
     ] {
         match fs.write_file(path, contents) {
             Ok(()) | Err(StorageError::AlreadyExists) => {}

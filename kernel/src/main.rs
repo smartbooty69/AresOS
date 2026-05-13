@@ -90,6 +90,24 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         backend,
         phase8_storage_ok
     );
+    let phase9_launch_ok = kernel::task::program_loader::phase9_smoke_check();
+    let loader_status = kernel::task::program_loader::status();
+    println!(
+        "Phase9-Loader: programs={}, launch_ok={}, storage_backed={}, launches={}, failed_launches={}",
+        loader_status.program_count,
+        phase9_launch_ok,
+        kernel::storage::is_mounted(),
+        loader_status.launch_count,
+        loader_status.failed_launch_count
+    );
+    kernel::serial_println!(
+        "Phase9-Loader: programs={}, launch_ok={}, storage_backed={}, launches={}, failed_launches={}",
+        loader_status.program_count,
+        phase9_launch_ok,
+        kernel::storage::is_mounted(),
+        loader_status.launch_count,
+        loader_status.failed_launch_count
+    );
 
     // Display performance counters at startup.
     let counters = PerformanceCounters::read();
