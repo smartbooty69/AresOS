@@ -210,6 +210,7 @@ fn execute_console_command(command: &str) {
             println!("  bin map <program>");
             println!("  bin back <program>");
             println!("  bin pagetable <program>");
+            println!("  bin userctx <program>");
             println!("  bin plans");
             println!("  bin mappings");
             println!("  frames");
@@ -252,6 +253,7 @@ fn execute_console_command(command: &str) {
                             crate::task::process::ProcessLoadState::MappedStub => "mapped",
                             crate::task::process::ProcessLoadState::FrameBacked => "backed",
                             crate::task::process::ProcessLoadState::PageTableReady => "ptable",
+                            crate::task::process::ProcessLoadState::UserContextReady => "uctx",
                         })
                         .unwrap_or("-");
                     println!(
@@ -452,10 +454,25 @@ fn execute_console_command(command: &str) {
             ),
             Err(err) => println!("program page-table error: {:?}", err),
         },
+        ["bin", "userctx", program] => match crate::task::program_loader::prepare_user_context(
+            crate::security::current_credentials(),
+            program,
+        ) {
+            Ok(userctx) => println!(
+                "User context: page_table={}, rip=0x{:x}, rsp=0x{:x}, cs={}, ss={}, ring3_entered={}",
+                userctx.context.page_table_id.as_u64(),
+                userctx.context.entry.rip,
+                userctx.context.entry.rsp,
+                userctx.context.entry.code_selector,
+                userctx.context.entry.stack_selector,
+                userctx.context.ring3_entered
+            ),
+            Err(err) => println!("program user-context error: {:?}", err),
+        },
         ["bin", "plans"] | ["loadplans"] => {
             let status = crate::task::program_loader::status();
             println!(
-                "Load plans: prepared={}, rejected={}, planned_pages={}, mapped={}, mapped_pages={}, backed={}, backed_pages={}, page_tables={}, ptable_pages={}, exec_blocked={}",
+                "Load plans: prepared={}, rejected={}, planned_pages={}, mapped={}, mapped_pages={}, backed={}, backed_pages={}, page_tables={}, ptable_pages={}, user_contexts={}, exec_blocked={}",
                 status.prepared_image_count,
                 status.rejected_load_plan_count,
                 status.total_planned_pages,
@@ -465,6 +482,7 @@ fn execute_console_command(command: &str) {
                 status.total_frame_backed_pages,
                 status.user_page_table_count,
                 status.total_user_page_table_pages,
+                status.user_context_count,
                 status.unsupported_execution_count
             );
         }

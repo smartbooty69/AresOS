@@ -178,6 +178,16 @@ def main() -> int:
             None,
         ),
         (
+            "phase17-user-context-check",
+            [
+                "python",
+                "scripts/phase17_user_context_check.py",
+                "--timeout",
+                str(args.smoke_timeout),
+            ],
+            None,
+        ),
+        (
             "phase5-soak-check",
             [
                 "python",

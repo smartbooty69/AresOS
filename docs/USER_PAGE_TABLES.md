@@ -1,6 +1,6 @@
 # Inactive User Page Tables
 
-Phase 16 builds inactive user page-table descriptors from Phase 15 frame-backed images. These descriptors model the virtual-to-physical mappings a future CR3 switch would use, but they do not switch CR3 or execute user code.
+Phase 16 builds inactive user page-table descriptors from Phase 15 frame-backed images. These descriptors model the virtual-to-physical mappings a future CR3 switch would use, but they do not switch CR3 or execute user code. Phase 17 uses them to construct user entry frames.
 
 ## Table Contents
 
@@ -43,4 +43,4 @@ Phase16-PageTables: tables=..., rejected=..., pages=..., translate_ok=true, cr3_
 
 ## Safety Boundary
 
-Phase 16 validates translation through descriptor lookup only. It does not install hardware page tables, switch CR3, enter Ring 3, or execute ELF code.
+Phase 16 validates translation through descriptor lookup only. It does not install hardware page tables, switch CR3, enter Ring 3, or execute ELF code. Phase 17 adds entry-frame descriptors, but still does not perform the privilege transition.

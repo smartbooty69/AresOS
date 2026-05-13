@@ -250,6 +250,25 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         table_status.total_user_page_table_pages,
         phase16_tables_ok
     );
+    let phase17_context_ok = kernel::task::program_loader::phase17_smoke_check();
+    let context_status = kernel::task::program_loader::status();
+    let user_selectors = kernel::gdt::user_selectors();
+    println!(
+        "Phase17-UserContext: contexts={}, rejected={}, user_code={}, user_data={}, entry_ok={}, ring3_entered=false",
+        context_status.user_context_count,
+        context_status.rejected_user_context_count,
+        user_selectors.code.0,
+        user_selectors.data.0,
+        phase17_context_ok
+    );
+    kernel::serial_println!(
+        "Phase17-UserContext: contexts={}, rejected={}, user_code={}, user_data={}, entry_ok={}, ring3_entered=false",
+        context_status.user_context_count,
+        context_status.rejected_user_context_count,
+        user_selectors.code.0,
+        user_selectors.data.0,
+        phase17_context_ok
+    );
 
     // Display performance counters at startup.
     let counters = PerformanceCounters::read();

@@ -65,6 +65,7 @@ pub enum ProgramLoadError {
     MappingRejected,
     FrameBackingRejected,
     PageTableRejected,
+    UserContextRejected,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +92,8 @@ pub struct LoaderStatus {
     pub user_page_table_count: u64,
     pub rejected_user_page_table_count: u64,
     pub total_user_page_table_pages: u64,
+    pub user_context_count: u64,
+    pub rejected_user_context_count: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,6 +123,12 @@ pub struct UserPageTableProgramImage {
     pub page_table: crate::user_memory::InactiveUserPageTable,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserContextProgramImage {
+    pub page_table: UserPageTableProgramImage,
+    pub context: crate::user_context::UserContextDescriptor,
+}
+
 static LAUNCH_COUNT: AtomicU64 = AtomicU64::new(0);
 static FAILED_LAUNCH_COUNT: AtomicU64 = AtomicU64::new(0);
 static DENIED_LAUNCH_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -138,6 +147,8 @@ static TOTAL_FRAME_BACKED_PAGES: AtomicU64 = AtomicU64::new(0);
 static USER_PAGE_TABLE_COUNT: AtomicU64 = AtomicU64::new(0);
 static REJECTED_USER_PAGE_TABLE_COUNT: AtomicU64 = AtomicU64::new(0);
 static TOTAL_USER_PAGE_TABLE_PAGES: AtomicU64 = AtomicU64::new(0);
+static USER_CONTEXT_COUNT: AtomicU64 = AtomicU64::new(0);
+static REJECTED_USER_CONTEXT_COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub fn parse_manifest(contents: &str) -> Result<ProgramManifest, ProgramLoadError> {
     let mut lines = contents.lines();
@@ -302,6 +313,8 @@ pub fn status() -> LoaderStatus {
         user_page_table_count: USER_PAGE_TABLE_COUNT.load(Ordering::Relaxed),
         rejected_user_page_table_count: REJECTED_USER_PAGE_TABLE_COUNT.load(Ordering::Relaxed),
         total_user_page_table_pages: TOTAL_USER_PAGE_TABLE_PAGES.load(Ordering::Relaxed),
+        user_context_count: USER_CONTEXT_COUNT.load(Ordering::Relaxed),
+        rejected_user_context_count: REJECTED_USER_CONTEXT_COUNT.load(Ordering::Relaxed),
     }
 }
 
@@ -567,6 +580,49 @@ pub fn phase16_smoke_check() -> bool {
         && after.total_user_page_table_pages > before.total_user_page_table_pages
 }
 
+pub fn prepare_user_context(
+    credentials: crate::security::Credentials,
+    name: &str,
+) -> Result<UserContextProgramImage, ProgramLoadError> {
+    let page_table = build_user_page_table(credentials, name)?;
+    let context = crate::user_context::build_user_context(
+        &page_table.page_table,
+        page_table.backed.mapped.prepared.load_plan.entry_point,
+        crate::gdt::user_selectors(),
+    )
+    .map_err(|_| {
+        REJECTED_USER_CONTEXT_COUNT.fetch_add(1, Ordering::Relaxed);
+        ProgramLoadError::UserContextRejected
+    })?;
+
+    USER_CONTEXT_COUNT.fetch_add(1, Ordering::Relaxed);
+    record_user_context_process(
+        credentials,
+        &page_table.backed.mapped.prepared,
+        &page_table.backed.backed,
+        &context,
+    );
+
+    Ok(UserContextProgramImage {
+        page_table,
+        context,
+    })
+}
+
+pub fn phase17_smoke_check() -> bool {
+    let before = status();
+    let prepared = prepare_user_context(crate::security::Credentials::shell_user(), "hello")
+        .map(|prepared| {
+            prepared.context.selectors_ready
+                && prepared.context.entry_ready
+                && !prepared.context.ring3_entered
+                && prepared.context.entry.rip == prepared.page_table.backed.mapped.prepared.load_plan.entry_point
+        })
+        .unwrap_or(false);
+    let after = status();
+    prepared && after.user_context_count > before.user_context_count
+}
+
 fn validate_manifest_image(
     manifest: &ProgramManifest,
 ) -> (Option<crate::exec_image::ExecutableImage>, Option<crate::exec_image::ImageLoadError>) {
@@ -750,6 +806,46 @@ fn record_page_table_process(
     };
     if let Some(pid) = crate::task::process::create_kernel_process_with_metadata(
         "image-page-table",
+        tick,
+        credentials,
+        metadata,
+        load,
+    ) {
+        let _ = crate::task::process::set_process_state(pid, crate::task::process::ProcessState::Blocked);
+    }
+}
+
+fn record_user_context_process(
+    credentials: crate::security::Credentials,
+    prepared: &PreparedProgramImage,
+    backed: &crate::frame_backing::FrameBackedImage,
+    context: &crate::user_context::UserContextDescriptor,
+) {
+    let tick =
+        crate::performance::metrics::TICK_COUNTER.load(core::sync::atomic::Ordering::Relaxed);
+    let metadata = crate::task::process::ProcessImageMetadata {
+        source_path: static_source_path(&prepared.program.source_path),
+        format: prepared.image.format,
+        entry_point: context.entry.rip,
+        segment_count: prepared.image.segments.len(),
+        address_space_id: Some(backed.address_space_id),
+        trust: prepared.image.trust,
+        owner: credentials,
+    };
+    let load = crate::task::process::ProcessLoadMetadata {
+        state: crate::task::process::ProcessLoadState::UserContextReady,
+        source_path: static_source_path(&prepared.image.source_path),
+        entry_point: context.entry.rip,
+        planned_pages: backed.total_pages,
+        region_count: backed.regions.len(),
+        stack_pages: prepared.load_plan.stack_pages,
+        mapping_id: Some(backed.mapping_id),
+        copied_bytes: backed.copied_bytes,
+        zero_filled_bytes: backed.zero_filled_bytes,
+        executable_pages: backed.executable_pages,
+    };
+    if let Some(pid) = crate::task::process::create_kernel_process_with_metadata(
+        "image-user-context",
         tick,
         credentials,
         metadata,

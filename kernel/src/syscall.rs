@@ -45,6 +45,8 @@ pub enum SyscallId {
     UserPageTableCount = 38,
     RejectedUserPageTableCount = 39,
     TotalUserPageTablePages = 40,
+    UserContextCount = 41,
+    RejectedUserContextCount = 42,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -301,6 +303,18 @@ pub fn invoke_raw(id: u64, arg0: u64) -> Result<u64, SyscallError> {
                 return Err(SyscallError::InvalidArgument);
             }
             Ok(crate::task::program_loader::status().total_user_page_table_pages)
+        }
+        x if x == SyscallId::UserContextCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::task::program_loader::status().user_context_count)
+        }
+        x if x == SyscallId::RejectedUserContextCount as u64 => {
+            if arg0 != 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            Ok(crate::task::program_loader::status().rejected_user_context_count)
         }
         _ => Err(SyscallError::InvalidSyscall),
     }

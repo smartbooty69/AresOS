@@ -280,6 +280,18 @@ Checklist: `docs/phase-16-checklist.md`
 
 User page-table deep dive: `docs/USER_PAGE_TABLES.md`
 
+### Phase 17 — User Context And Entry Frames
+
+* GDT user code/data selectors
+* initial user entry frame and stack descriptors
+* blocked `UserContextReady` process metadata without Ring 3 entry
+
+Status: ✅ Complete (validated 2026-05-13; user-context smoke)
+
+Checklist: `docs/phase-17-checklist.md`
+
+User context deep dive: `docs/USER_CONTEXT.md`
+
 ---
 
 # Project Structure
@@ -301,6 +313,7 @@ AresOS
 │   │   ├── address_space.rs   descriptor-only process address spaces
 │   │   ├── load_plan.rs       executable load-plan accounting
 │   │   ├── mapping_stub.rs    deterministic executable mapping stubs
+│   │   ├── user_context.rs    user entry-frame descriptors
 │   │   ├── user_memory.rs     inactive user page-table descriptors
 │   │   ├── lib.rs             shared kernel modules
 │   │   ├── interrupts.rs      IDT + IRQ handlers
@@ -440,6 +453,12 @@ Phase 16 inactive page-table check:
 
 ```
 ./scripts/phase16-page-table-check --timeout 20
+```
+
+Phase 17 user-context check:
+
+```
+./scripts/phase17-user-context-check --timeout 20
 ```
 
 Full validation matrix (QEMU-backed):

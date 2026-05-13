@@ -37,18 +37,30 @@ lazy_static! {
 struct Selectors {
     code_selector: SegmentSelector,
     tss_selector: SegmentSelector,
+    user_data_selector: SegmentSelector,
+    user_code_selector: SegmentSelector,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UserSelectors {
+    pub code: SegmentSelector,
+    pub data: SegmentSelector,
 }
 
 lazy_static! {
     static ref GDT: (GlobalDescriptorTable, Selectors) = {
         let mut gdt = GlobalDescriptorTable::new();
         let code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
+        let user_data_selector = gdt.add_entry(Descriptor::user_data_segment());
+        let user_code_selector = gdt.add_entry(Descriptor::user_code_segment());
         let tss_selector = gdt.add_entry(Descriptor::tss_segment(&TSS));
         (
             gdt,
             Selectors {
                 code_selector,
                 tss_selector,
+                user_data_selector,
+                user_code_selector,
             },
         )
     };
@@ -60,5 +72,12 @@ pub fn init() {
     unsafe {
         CS::set_reg(GDT.1.code_selector);
         load_tss(GDT.1.tss_selector);
+    }
+}
+
+pub fn user_selectors() -> UserSelectors {
+    UserSelectors {
+        code: GDT.1.user_code_selector,
+        data: GDT.1.user_data_selector,
     }
 }

@@ -890,3 +890,59 @@ fn phase16_loader_process_metadata_syscalls_and_smoke_work() {
     );
     assert!(kernel::task::program_loader::phase16_smoke_check());
 }
+
+#[test_case]
+fn phase17_user_selectors_and_entry_context_are_valid() {
+    kernel::storage::format().expect("format should seed image manifests");
+    let prepared = kernel::task::program_loader::prepare_user_context(
+        security::Credentials::shell_user(),
+        "hello",
+    )
+    .expect("user context should prepare");
+    assert!(prepared.context.selectors_ready);
+    assert!(prepared.context.entry_ready);
+    assert!(!prepared.context.ring3_entered);
+    assert_ne!(prepared.context.entry.code_selector, 0);
+    assert_ne!(prepared.context.entry.stack_selector, 0);
+    assert_eq!(prepared.context.entry.rflags & 0x200, 0x200);
+    assert_eq!(
+        prepared.context.entry.rip,
+        prepared.page_table.backed.mapped.prepared.load_plan.entry_point
+    );
+}
+
+#[test_case]
+fn phase17_loader_process_metadata_syscalls_and_smoke_work() {
+    kernel::storage::format().expect("format should seed image manifests");
+    let before = kernel::task::program_loader::status();
+    let prepared = kernel::task::program_loader::prepare_user_context(
+        security::Credentials::shell_user(),
+        "hello",
+    )
+    .expect("user context should prepare");
+    let after = kernel::task::program_loader::status();
+    assert!(after.user_context_count > before.user_context_count);
+
+    let has_context_record = process::get_all_processes_with_details()
+        .iter()
+        .any(|(_, name, state, _, owner, _, load)| {
+            *name == "image-user-context"
+                && *state == process::ProcessState::Blocked
+                && *owner == security::Credentials::shell_user()
+                && load
+                    .as_ref()
+                    .map(|load| {
+                        load.state == process::ProcessLoadState::UserContextReady
+                            && load.entry_point == prepared.context.entry.rip
+                    })
+                    .unwrap_or(false)
+        });
+    assert!(has_context_record);
+
+    assert!(syscall::invoke_raw(syscall::SyscallId::UserContextCount as u64, 0).unwrap() > 0);
+    assert_eq!(
+        syscall::invoke_raw(syscall::SyscallId::UserContextCount as u64, 1),
+        Err(syscall::SyscallError::InvalidArgument)
+    );
+    assert!(kernel::task::program_loader::phase17_smoke_check());
+}
