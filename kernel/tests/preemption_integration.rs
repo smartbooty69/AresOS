@@ -25,15 +25,23 @@ fn main(boot_info: &'static BootInfo) -> ! {
     kernel::init();
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    kernel::user_paging::init(phys_mem_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator =
         unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
+    let heap_frames = frame_allocator.allocated_frame_count();
 
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialisation failed");
     let _ = kernel::frame_ownership::init_from_memory_map(
         &boot_info.memory_map,
         frame_allocator.allocated_frame_count(),
     );
+    unsafe {
+        kernel::user_paging::set_boot_frame_allocator(
+            &boot_info.memory_map,
+            heap_frames + kernel::frame_ownership::MAX_TRACKED_FRAMES,
+        );
+    }
 
     test_main();
     hlt_loop();
@@ -1081,4 +1089,64 @@ fn phase20_loader_process_metadata_syscalls_and_smoke_work() {
         Err(syscall::SyscallError::InvalidArgument)
     );
     assert!(kernel::task::program_loader::phase20_smoke_check());
+}
+
+#[test_case]
+fn phase21_hw_page_tables_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase21_smoke_check());
+}
+
+#[test_case]
+fn phase22_cr3_activation_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase22_smoke_check());
+}
+
+#[test_case]
+fn phase23_iretq_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase23_smoke_check());
+}
+
+#[test_case]
+fn phase24_user_trap_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase24_smoke_check());
+}
+
+#[test_case]
+fn phase25_hw_syscall_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase25_smoke_check());
+}
+
+#[test_case]
+fn phase26_user_copy_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase26_smoke_check());
+}
+
+#[test_case]
+fn phase27_reloc_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase27_smoke_check());
+}
+
+#[test_case]
+fn phase28_hw_hello_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase28_smoke_check());
+}
+
+#[test_case]
+fn phase29_allowlist_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase29_smoke_check());
+}
+
+#[test_case]
+fn phase30_cr3_switch_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase30_cr3_switch_smoke());
 }

@@ -17,6 +17,113 @@ use x86_64::VirtAddr;
 
 entry_point!(kernel_main);
 
+fn run_phase21_to_30_smokes() {
+    let phase21_ok = kernel::task::program_loader::phase21_smoke_check();
+    let (hw_built, hw_verified, hw_rejected, _, _, _, _) = kernel::user_paging::status();
+    println!(
+        "Phase21-HwPageTables: built={}, verified={}, rejected={}, tables_ok={}",
+        hw_built, hw_verified, hw_rejected, phase21_ok
+    );
+    kernel::serial_println!(
+        "Phase21-HwPageTables: built={}, verified={}, rejected={}, tables_ok={}",
+        hw_built, hw_verified, hw_rejected, phase21_ok
+    );
+    let phase22_ok = kernel::task::program_loader::phase22_smoke_check();
+    let (cr3_act, cr3_restore, _, _, _, _, _) = kernel::user_paging::status();
+    println!(
+        "Phase22-Cr3: activations={}, restores={}, verify_ok={}",
+        cr3_act, cr3_restore, phase22_ok
+    );
+    kernel::serial_println!(
+        "Phase22-Cr3: activations={}, restores={}, verify_ok={}",
+        cr3_act, cr3_restore, phase22_ok
+    );
+    let phase23_ok = kernel::task::program_loader::phase23_smoke_check();
+    let (iretq_entries, iretq_trapped, _, _) = kernel::user_entry::status();
+    println!(
+        "Phase23-Iretq: entries={}, trapped={}, entry_ok={}",
+        iretq_entries, iretq_trapped, phase23_ok
+    );
+    kernel::serial_println!(
+        "Phase23-Iretq: entries={}, trapped={}, entry_ok={}",
+        iretq_entries, iretq_trapped, phase23_ok
+    );
+    let phase24_ok = kernel::task::program_loader::phase24_smoke_check();
+    let (trap_count, trap_returns, _, _) = kernel::user_entry::status();
+    println!(
+        "Phase24-UserTrap: traps={}, returns={}, vector_ok={}",
+        trap_count, trap_returns, phase24_ok
+    );
+    kernel::serial_println!(
+        "Phase24-UserTrap: traps={}, returns={}, vector_ok={}",
+        trap_count, trap_returns, phase24_ok
+    );
+    let phase25_ok = kernel::task::program_loader::phase25_smoke_check();
+    let (hw_syscalls, hw_sysrets) = kernel::user_syscall_hw::status();
+    println!(
+        "Phase25-SyscallHw: syscalls={}, sysrets={}, hw_ok={}",
+        hw_syscalls, hw_sysrets, phase25_ok
+    );
+    kernel::serial_println!(
+        "Phase25-SyscallHw: syscalls={}, sysrets={}, hw_ok={}",
+        hw_syscalls, hw_sysrets, phase25_ok
+    );
+    let phase26_ok = kernel::task::program_loader::phase26_smoke_check();
+    let (copy_ok_count, copy_rejected) = kernel::user_copy::status();
+    println!(
+        "Phase26-Copyin: copies={}, rejected={}, copy_ok={}",
+        copy_ok_count, copy_rejected, phase26_ok
+    );
+    kernel::serial_println!(
+        "Phase26-Copyin: copies={}, rejected={}, copy_ok={}",
+        copy_ok_count, copy_rejected, phase26_ok
+    );
+    let phase27_ok = kernel::task::program_loader::phase27_smoke_check();
+    let (reloc_applied, reloc_rejected) = kernel::elf_reloc::status();
+    println!(
+        "Phase27-Reloc: applied={}, rejected={}, reloc_ok={}",
+        reloc_applied, reloc_rejected, phase27_ok
+    );
+    kernel::serial_println!(
+        "Phase27-Reloc: applied={}, rejected={}, reloc_ok={}",
+        reloc_applied, reloc_rejected, phase27_ok
+    );
+    let phase28_ok = kernel::task::program_loader::phase28_smoke_check();
+    let hw_elf_status = kernel::task::program_loader::status();
+    println!(
+        "Phase28-HwHello: executions={}, exits={}, hello_hw_ok={}",
+        hw_elf_status.hw_elf_execution_count,
+        hw_elf_status.user_elf_exit_count,
+        phase28_ok
+    );
+    kernel::serial_println!(
+        "Phase28-HwHello: executions={}, exits={}, hello_hw_ok={}",
+        hw_elf_status.hw_elf_execution_count,
+        hw_elf_status.user_elf_exit_count,
+        phase28_ok
+    );
+    let phase29_ok = kernel::task::program_loader::phase29_smoke_check();
+    println!(
+        "Phase29-Allowlist: programs=2, exit42_ok={}, hello_ok={}",
+        phase29_ok, phase28_ok
+    );
+    kernel::serial_println!(
+        "Phase29-Allowlist: programs=2, exit42_ok={}, hello_ok={}",
+        phase29_ok, phase28_ok
+    );
+    let phase30_ok = kernel::task::program_loader::phase30_cr3_switch_smoke();
+    let (_, _, _, _, _, cr3_switches, isolated) = kernel::user_paging::status();
+    println!(
+        "Phase30-Cr3Switch: switches={}, isolated={}, switch_ok={}",
+        cr3_switches, isolated, phase30_ok
+    );
+    kernel::serial_println!(
+        "Phase30-Cr3Switch: switches={}, isolated={}, switch_ok={}",
+        cr3_switches, isolated, phase30_ok
+    );
+    kernel::task::program_loader::set_hw_user_elf_ready();
+}
+
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     println!("AresOS v{} booting...", env!("CARGO_PKG_VERSION"));
 
@@ -24,9 +131,11 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // Initialise memory subsystem.
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    kernel::user_paging::init(phys_mem_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator =
         unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
+    let heap_frames = frame_allocator.allocated_frame_count();
 
     // Set up the kernel heap.
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialisation failed");
@@ -35,6 +144,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         frame_allocator.allocated_frame_count(),
     )
     .expect("frame ownership initialisation failed");
+    let skip_frames = heap_frames + kernel::frame_ownership::MAX_TRACKED_FRAMES;
+    unsafe {
+        kernel::user_paging::set_boot_frame_allocator(&boot_info.memory_map, skip_frames);
+    }
     kernel::task::keyboard::init_scancode_queue();
     kernel::storage::init();
     let boot_tick = kernel::performance::metrics::TICK_COUNTER.load(core::sync::atomic::Ordering::Relaxed);
@@ -211,6 +324,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         frame_status.failed_allocation_count,
         phase14_frames_ok
     );
+    run_phase21_to_30_smokes();
     let phase15_backing_ok = kernel::task::program_loader::phase15_smoke_check();
     let backing_status = kernel::task::program_loader::status();
     let backing_frames = kernel::frame_ownership::status();

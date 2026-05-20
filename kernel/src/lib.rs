@@ -34,8 +34,13 @@ pub mod storage;
 pub mod syscall;
 pub mod task;
 pub mod user_context;
+pub mod elf_reloc;
+pub mod user_copy;
+pub mod user_entry;
 pub mod user_memory;
+pub mod user_paging;
 pub mod user_syscall;
+pub mod user_syscall_hw;
 pub mod vga_buffer;
 
 use core::panic::PanicInfo;

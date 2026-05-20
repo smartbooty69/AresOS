@@ -76,6 +76,12 @@ pub enum ProcessLoadState {
     UserTrapped,
     UserSyscallReturned,
     UserElfExited,
+    HwPageTableReady,
+    Cr3Activated,
+    UserEnteredHw,
+    UserHwTrapped,
+    UserHwSyscallReturned,
+    UserHwElfExited,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

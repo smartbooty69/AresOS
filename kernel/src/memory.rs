@@ -6,6 +6,7 @@
 //! * `BootInfoFrameAllocator` – a simple physical frame allocator that hands
 //!   out usable frames reported by the bootloader's memory map.
 
+use alloc::vec::{IntoIter, Vec};
 use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
 use x86_64::{
     structures::paging::{
@@ -98,8 +99,18 @@ pub fn create_example_mapping(
 /// After returning all usable frames it will return `None` for every subsequent
 /// allocation request.
 pub struct BootInfoFrameAllocator {
-    memory_map: &'static MemoryMap,
+    memory_map: Option<&'static MemoryMap>,
     next: usize,
+    frames: Option<IntoIter<PhysFrame<Size4KiB>>>,
+    allocated: usize,
+}
+
+fn usable_frames(memory_map: &'static MemoryMap) -> impl Iterator<Item = PhysFrame<Size4KiB>> {
+    let regions = memory_map.iter();
+    let usable_regions = regions.filter(|r| r.region_type == MemoryRegionType::Usable);
+    let addr_ranges = usable_regions.map(|r| r.range.start_addr()..r.range.end_addr());
+    let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
+    frame_addresses.map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
 }
 
 impl BootInfoFrameAllocator {
@@ -110,28 +121,39 @@ impl BootInfoFrameAllocator {
     /// all frames labelled `Usable` must actually be unused.
     pub unsafe fn init(memory_map: &'static MemoryMap) -> Self {
         BootInfoFrameAllocator {
-            memory_map,
+            memory_map: Some(memory_map),
             next: 0,
+            frames: None,
+            allocated: 0,
         }
     }
 
-    fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
-        let regions = self.memory_map.iter();
-        let usable_regions = regions.filter(|r| r.region_type == MemoryRegionType::Usable);
-        let addr_ranges = usable_regions.map(|r| r.range.start_addr()..r.range.end_addr());
-        let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
-        frame_addresses.map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
+    pub unsafe fn init_from_index(memory_map: &'static MemoryMap, start_index: usize) -> Self {
+        let frames: Vec<_> = usable_frames(memory_map).skip(start_index).collect();
+        BootInfoFrameAllocator {
+            memory_map: None,
+            next: start_index,
+            frames: Some(frames.into_iter()),
+            allocated: start_index,
+        }
     }
 
     pub fn allocated_frame_count(&self) -> usize {
-        self.next
+        self.allocated
     }
 }
 
 unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
-    fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        let frame = self.usable_frames().nth(self.next);
+    fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
+        if let Some(frames) = &mut self.frames {
+            let frame = frames.next()?;
+            self.allocated += 1;
+            return Some(frame);
+        }
+        let memory_map = self.memory_map?;
+        let frame = usable_frames(memory_map).nth(self.next)?;
         self.next += 1;
-        frame
+        self.allocated += 1;
+        Some(frame)
     }
 }
