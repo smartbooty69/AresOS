@@ -691,6 +691,11 @@ fn seed_bootstrap_files<D: BlockDevice>(fs: &mut SimpleFs<D>) -> Result<(), Stor
             "ares-exec-v1\nname=hello\nkind=elf64-image\nentry=0x400000\nimage=/bin/hello.elf\nrequires=execute\ntrust=user\nowner=user\ndescription=ELF image validation fixture",
         ),
         ("/bin/hello.elf", sample_elf.as_str()),
+        (
+            "/bin/exit42",
+            "ares-exec-v1\nname=exit42\nkind=elf64-image\nentry=0x400000\nimage=/bin/exit42.elf\nrequires=execute\ntrust=user\nowner=user\ndescription=Exit code 42 fixture",
+        ),
+        ("/bin/exit42.elf", sample_elf.as_str()),
     ] {
         let owner = if path.starts_with("/bin/") {
             Credentials::admin().user
