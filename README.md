@@ -328,6 +328,80 @@ Checklist: `docs/phase-20-checklist.md`
 
 User ELF MVP deep dive: `docs/USER_ELF_MVP.md`
 
+### Phase 21 — Hardware User Page Tables
+
+* real x86_64 page tables from inactive descriptors
+* descriptor vs hardware translation verification
+* blocked `HwPageTableReady` process metadata
+
+Checklist: `docs/phase-21-checklist.md`
+
+### Phase 22 — Controlled CR3 Activation
+
+* activate and restore user CR3 without execution
+* translation verification under switched page tables
+* blocked `Cr3Activated` process metadata
+
+Checklist: `docs/phase-22-checklist.md`
+
+### Phase 23 — Real iretq User Entry
+
+* CPU Ring 3 entry via `iretq` to a controlled stub
+* return through invalid-opcode trap during bring-up
+* blocked `UserEnteredHw` process metadata
+
+Checklist: `docs/phase-23-checklist.md`
+
+### Phase 24 — Hardware User Trap Return
+
+* IDT vector `0x80` handler for cooperative user return
+* blocked `UserHwTrapped` process metadata
+
+Checklist: `docs/phase-24-checklist.md`
+
+### Phase 25 — CPU syscall / sysret Path
+
+* `syscall`/`sysret` MSRs and entry stub
+* hardware tick-probe syscall path
+* blocked `UserHwSyscallReturned` process metadata
+
+Checklist: `docs/phase-25-checklist.md`
+
+### Phase 26 — Validated User Copyin
+
+* bounded `copy_from_user` / `copy_to_user`
+* copy-probe syscall round-trip
+
+Checklist: `docs/phase-26-checklist.md`
+
+### Phase 27 — Static ELF Relocations
+
+* `R_X86_64_RELATIVE` / `R_X86_64_64` for seeded images
+* relocation accounting during frame backing
+
+Checklist: `docs/phase-27-checklist.md`
+
+### Phase 28 — Hardware Hello Execution
+
+* `run hello` through hardware Ring 3 + syscall path
+* blocked `UserHwElfExited` process metadata
+
+Checklist: `docs/phase-28-checklist.md`
+
+### Phase 29 — Allowlisted ELF Programs
+
+* allowlisted `hello` and `exit42` ELF programs
+* seeded manifests and images
+
+Checklist: `docs/phase-29-checklist.md`
+
+### Phase 30 — Per-Process CR3 Switching
+
+* save/restore distinct user CR3 values
+* isolation verification across switches
+
+Checklist: `docs/phase-30-checklist.md`
+
 ---
 
 # Project Structure
@@ -515,6 +589,66 @@ Phase 20 user ELF check:
 
 ```
 ./scripts/phase20-user-elf-check --timeout 20
+```
+
+Phase 21 hardware page-table check:
+
+```
+python scripts/phase21_hw_page_table_check.py --timeout 20
+```
+
+Phase 22 CR3 activation check:
+
+```
+python scripts/phase22_cr3_check.py --timeout 20
+```
+
+Phase 23 iretq entry check:
+
+```
+python scripts/phase23_iretq_check.py --timeout 20
+```
+
+Phase 24 user trap check:
+
+```
+python scripts/phase24_user_trap_check.py --timeout 20
+```
+
+Phase 25 hardware syscall check:
+
+```
+python scripts/phase25_syscall_hw_check.py --timeout 20
+```
+
+Phase 26 user copyin check:
+
+```
+python scripts/phase26_copyin_check.py --timeout 20
+```
+
+Phase 27 relocation check:
+
+```
+python scripts/phase27_reloc_check.py --timeout 20
+```
+
+Phase 28 hardware hello check:
+
+```
+python scripts/phase28_hw_hello_check.py --timeout 20
+```
+
+Phase 29 allowlist check:
+
+```
+python scripts/phase29_allowlist_check.py --timeout 20
+```
+
+Phase 30 CR3 switch check:
+
+```
+python scripts/phase30_cr3_switch_check.py --timeout 20
 ```
 
 Full validation matrix (QEMU-backed):

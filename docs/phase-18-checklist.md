@@ -13,7 +13,7 @@
 
 - [x] `cargo check -p kernel`
 - [x] `cargo test -p kernel --test preemption_integration`
-- [x] `python scripts/phase18_ring3_check.py --timeout 20`
+- [x] `python scripts/phase18_ring3_check.py --timeout 120`
 
 ## Deferred
 

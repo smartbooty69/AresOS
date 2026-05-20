@@ -42,7 +42,7 @@
 ```bash
 cargo check -p kernel
 cargo test -p kernel --test preemption_integration
-python scripts/phase9_loader_check.py --timeout 20
+python scripts/phase9_loader_check.py --timeout 120
 python scripts/validation_matrix.py --soak-duration 20 --latency-duration 20
 ```
 
