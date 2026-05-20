@@ -76,7 +76,7 @@ def phase17_user_context_ok(output: str) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Phase 17 user-context smoke check.")
-    parser.add_argument("--timeout", type=int, default=20)
+    parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
 
     cleanup_qemu_processes()

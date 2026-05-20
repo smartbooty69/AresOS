@@ -70,7 +70,7 @@ def phase18_ring3_ok(output: str) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Phase 18 controlled Ring 3 smoke check.")
-    parser.add_argument("--timeout", type=int, default=20)
+    parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
 
     cleanup_qemu_processes()

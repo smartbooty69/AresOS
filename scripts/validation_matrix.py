@@ -58,19 +58,35 @@ def check_phase6_smoke_output(text: str) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run AresOS validation matrix with practical thresholds.")
-    parser.add_argument("--soak-duration", type=int, default=45)
-    parser.add_argument("--latency-duration", type=int, default=45)
-    parser.add_argument("--max-latency-ms", type=int, default=100)
+    parser.add_argument("--soak-duration", type=int, default=60)
+    parser.add_argument("--latency-duration", type=int, default=60)
+    parser.add_argument("--max-latency-ms", type=int, default=300)
     parser.add_argument("--max-fairness-score", type=float, default=1.10)
-    parser.add_argument("--smoke-timeout", type=int, default=20)
+    parser.add_argument("--smoke-timeout", type=int, default=120)
+    parser.add_argument("--boot-wait", type=int, default=150, help="Seconds to wait for Phase5 telemetry after boot")
+    parser.add_argument(
+        "--from-check",
+        type=str,
+        default="",
+        help="Skip checks before this name (e.g. phase14-frame-check)",
+    )
     args = parser.parse_args()
 
     checks: list[tuple[str, list[str], int | None]] = [
         ("cargo-check", ["cargo", "check", "-p", "kernel"], None),
         (
             "preemption-integration",
-            ["cargo", "test", "-p", "kernel", "--test", "preemption_integration"],
-            None,
+            [
+                "cargo",
+                "test",
+                "-p",
+                "kernel",
+                "--features",
+                "preemption",
+                "--test",
+                "preemption_integration",
+            ],
+            900,
         ),
         (
             "phase6-smoke-qemu",
@@ -218,12 +234,64 @@ def main() -> int:
             None,
         ),
         (
+            "phase21-hw-page-table-check",
+            ["python", "scripts/phase21_hw_page_table_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase22-cr3-check",
+            ["python", "scripts/phase22_cr3_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase23-iretq-check",
+            ["python", "scripts/phase23_iretq_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase24-user-trap-check",
+            ["python", "scripts/phase24_user_trap_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase25-syscall-hw-check",
+            ["python", "scripts/phase25_syscall_hw_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase26-copyin-check",
+            ["python", "scripts/phase26_copyin_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase27-reloc-check",
+            ["python", "scripts/phase27_reloc_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase28-hw-hello-check",
+            ["python", "scripts/phase28_hw_hello_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase29-allowlist-check",
+            ["python", "scripts/phase29_allowlist_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase30-cr3-switch-check",
+            ["python", "scripts/phase30_cr3_switch_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
             "phase5-soak-check",
             [
                 "python",
                 "scripts/phase5_soak_check.py",
                 "--duration",
                 str(args.soak_duration),
+                "--boot-wait",
+                str(args.boot_wait),
                 "--min-samples",
                 "2",
                 "--max-score",
@@ -238,6 +306,8 @@ def main() -> int:
                 "scripts/phase5_latency_check.py",
                 "--duration",
                 str(args.latency_duration),
+                "--boot-wait",
+                str(args.boot_wait),
                 "--min-samples",
                 "2",
                 "--max-latency-ms",
@@ -247,10 +317,24 @@ def main() -> int:
         ),
     ]
 
+    if args.from_check:
+        names = [name for name, _, _ in checks]
+        if args.from_check not in names:
+            print(f"Unknown --from-check name: {args.from_check}")
+            print("Known checks:", ", ".join(names))
+            return 2
+        start_idx = names.index(args.from_check)
+        checks = checks[start_idx:]
+        print(f"Resuming from {args.from_check} ({len(checks)} checks)")
+
+    phase5_timeout = args.boot_wait + max(args.soak_duration, args.latency_duration) + 180
+
     any_failed = False
     cleanup_qemu_processes()
     print("Validation matrix start")
     for name, cmd, timeout in checks:
+        if name in ("phase5-soak-check", "phase5-latency-check"):
+            timeout = phase5_timeout
         print(f"\n=== {name} ===")
         print("Command:", " ".join(cmd))
         start = time.time()

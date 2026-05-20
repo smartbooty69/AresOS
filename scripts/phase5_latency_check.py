@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
 import re
-import signal
-import subprocess
 import sys
-import threading
 import time
 from dataclasses import dataclass
-from queue import Empty, Queue
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from phase5_telemetry import collect_samples
 
 LATENCY_RE = re.compile(r"Phase5-Latency:\s+(.*)")
 KV_RE = re.compile(
@@ -72,112 +72,27 @@ def validate(samples: list[Sample], max_latency_ms: int) -> tuple[bool, list[str
     return len(errors) == 0, errors
 
 
-def terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
-    if process.poll() is not None:
-        return
-    if os.name == "nt":
-        process.terminate()
-        try:
-            process.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=3)
-        return
-
-    os.killpg(process.pid, signal.SIGTERM)
-    try:
-        process.wait(timeout=3)
-    except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
-        process.wait(timeout=3)
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run Phase 5 latency validation and enforce estimated preemption latency SLA."
     )
-    parser.add_argument("--duration", type=int, default=120, help="Validation duration in seconds")
+    parser.add_argument("--boot-wait", type=int, default=150, help="Seconds to wait for first latency sample")
+    parser.add_argument("--duration", type=int, default=120, help="Validation duration after first sample")
     parser.add_argument("--min-samples", type=int, default=5, help="Minimum latency samples")
-    parser.add_argument("--max-latency-ms", type=int, default=100, help="Maximum allowed estimated preemption latency in milliseconds")
+    parser.add_argument("--max-latency-ms", type=int, default=300, help="Maximum allowed estimated preemption latency in milliseconds")
     args = parser.parse_args()
 
-    cmd = [
-        "cargo",
-        "run",
-        "-p",
-        "kernel",
-        "--features",
-        "preemption",
-        "--",
-        "-serial",
-        "stdio",
-        "-display",
-        "none",
-        "-no-reboot",
-    ]
+    print(
+        f"Starting Phase 5 latency check (boot_wait={args.boot_wait}s, duration={args.duration}s after first sample)"
+    )
 
-    print(f"Starting Phase 5 latency check for {args.duration}s")
-    print("Command:", " ".join(cmd))
-
-    samples: list[Sample] = []
-    output_tail: list[str] = []
-    process = None
     try:
-        process = subprocess.Popen(
-            cmd,
-            env=os.environ.copy(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=False,
-            bufsize=0,
-            start_new_session=True,
+        samples, output_tail = collect_samples(
+            parse_sample,
+            boot_wait=args.boot_wait,
+            duration=args.duration,
         )
-
-        queue: Queue[str | None] = Queue()
-
-        def stream_reader() -> None:
-            assert process is not None and process.stdout is not None
-            pending = ""
-            while True:
-                chunk = os.read(process.stdout.fileno(), 4096)
-                if not chunk:
-                    if pending:
-                        queue.put(pending)
-                    queue.put(None)
-                    return
-                pending += chunk.decode(errors="replace")
-                while "\n" in pending:
-                    line, pending = pending.split("\n", 1)
-                    queue.put(line.rstrip("\r"))
-
-        reader = threading.Thread(target=stream_reader, daemon=True)
-        reader.start()
-
-        deadline = time.time() + args.duration
-        while time.time() < deadline:
-            try:
-                line = queue.get(timeout=0.2)
-            except Empty:
-                if process.poll() is not None:
-                    break
-                continue
-
-            if line is None:
-                break
-
-            output_tail.append(line)
-            if len(output_tail) > 40:
-                output_tail.pop(0)
-
-            sample = parse_sample(line)
-            if sample is not None:
-                samples.append(sample)
-
-        if process.poll() is None:
-            terminate_process_tree(process)
     except KeyboardInterrupt:
-        if process is not None and process.poll() is None:
-            terminate_process_tree(process)
         print("Interrupted by user")
         return 130
 

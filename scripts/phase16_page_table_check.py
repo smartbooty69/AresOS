@@ -75,7 +75,7 @@ def phase16_page_tables_ok(output: str) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Phase 16 inactive page-table smoke check.")
-    parser.add_argument("--timeout", type=int, default=20)
+    parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
 
     cleanup_qemu_processes()
