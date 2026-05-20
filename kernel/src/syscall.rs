@@ -56,6 +56,15 @@ pub enum SyscallId {
     UserElfExecutionCount = 49,
     UserElfExitCount = 50,
     RejectedUserElfCount = 51,
+    HwPageTableCount = 52,
+    RejectedHwPageTableCount = 53,
+    Cr3ActivationCount = 54,
+    IretqEntryCount = 55,
+    HwSyscallCount = 56,
+    UserCopySuccessCount = 57,
+    RelocAppliedCount = 58,
+    HwElfExecutionCount = 59,
+    UserCopyProbe = 60,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
