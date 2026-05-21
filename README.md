@@ -402,6 +402,76 @@ Checklist: `docs/phase-29-checklist.md`
 
 Checklist: `docs/phase-30-checklist.md`
 
+### Phase 31 — Scheduler CR3 Binding
+
+* CR3 binding on process records and preemptive context switch
+* `Phase31-SchedCr3` boot smoke
+
+Checklist: `docs/phase-31-checklist.md`
+
+### Phase 32 — User Trap Frame Persistence
+
+* saved `UserHwFrame` across scheduler yield
+* `Phase32-UserFrame` boot smoke
+
+Checklist: `docs/phase-32-checklist.md`
+
+### Phase 33 — Concurrent Allowlisted ELFs
+
+* `hello` and `exit42` under distinct hardware page tables
+* `Phase33-MultiElf` boot smoke
+
+Checklist: `docs/phase-33-checklist.md`
+
+### Phase 34 — Exit and Wait Syscalls
+
+* `ExitProcess` / `WaitProcess` syscalls
+* `Phase34-ExitWait` boot smoke
+
+Checklist: `docs/phase-34-checklist.md`
+
+### Phase 35 — Hardware Syscall Dispatch Table
+
+* allowlisted hardware syscall IDs
+* `Phase35-SyscallTable` boot smoke
+
+Checklist: `docs/phase-35-checklist.md`
+
+### Phase 36 — Storage Syscalls With Copyin
+
+* storage probe syscalls with validated user copies
+* `Phase36-StorageCopyin` boot smoke
+
+Checklist: `docs/phase-36-checklist.md`
+
+### Phase 37 — Manifest-Discovered ELF Load
+
+* discover `elf64-image` manifests; gated execution including `tickprobe`
+* `Phase37-ManifestElf` boot smoke
+
+Checklist: `docs/phase-37-checklist.md`
+
+### Phase 38 — Demand-Zero Page Growth
+
+* user `#PF` handler and demand-zero mapping
+* `Phase38-DemandZero` boot smoke
+
+Checklist: `docs/phase-38-checklist.md`
+
+### Phase 39 — Dynamic Linking Groundwork
+
+* `DT_NEEDED` detection for ARES seed ELFs
+* `Phase39-Dynamic` boot smoke
+
+Checklist: `docs/phase-39-checklist.md`
+
+### Phase 40 — Integration Milestone
+
+* end-to-end validation of phases 31–39
+* `Phase40-Integration` boot smoke
+
+Checklist: `docs/phase-40-checklist.md`
+
 ---
 
 # Project Structure

@@ -14,5 +14,5 @@
 
 ## Deferred
 
-- [ ] Scheduler-integrated CR3 switching on every context switch.
-- [ ] Demand paging and SMP TLB shootdown.
+- [x] Scheduler-integrated CR3 switching on every context switch (Phase 31).
+- [ ] Demand paging and SMP TLB shootdown (demand-zero slice in Phase 38).
