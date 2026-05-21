@@ -284,6 +284,56 @@ def main() -> int:
             None,
         ),
         (
+            "phase31-sched-cr3-check",
+            ["python", "scripts/phase31_sched_cr3_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase32-user-frame-check",
+            ["python", "scripts/phase32_user_frame_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase33-multi-elf-check",
+            ["python", "scripts/phase33_multi_elf_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase34-exit-wait-check",
+            ["python", "scripts/phase34_exit_wait_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase35-syscall-table-check",
+            ["python", "scripts/phase35_syscall_table_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase36-storage-copyin-check",
+            ["python", "scripts/phase36_storage_copyin_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase37-manifest-elf-check",
+            ["python", "scripts/phase37_manifest_elf_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase38-demand-zero-check",
+            ["python", "scripts/phase38_demand_zero_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase39-dynamic-check",
+            ["python", "scripts/phase39_dynamic_check.py", "--timeout", str(args.smoke_timeout)],
+            None,
+        ),
+        (
+            "phase40-integration-check",
+            ["python", "scripts/phase40_integration_check.py", "--timeout", str(max(args.smoke_timeout, 180))],
+            None,
+        ),
+        (
             "phase5-soak-check",
             [
                 "python",
