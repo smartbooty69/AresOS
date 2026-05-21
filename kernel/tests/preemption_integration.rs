@@ -1150,3 +1150,60 @@ fn phase30_cr3_switch_smoke_works() {
     kernel::storage::format().expect("format should seed image manifests");
     assert!(kernel::task::program_loader::phase30_cr3_switch_smoke());
 }
+
+#[test_case]
+fn phase31_sched_cr3_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase31_sched_cr3_smoke());
+}
+
+#[test_case]
+fn phase32_user_frame_smoke_works() {
+    assert!(kernel::task::program_loader::phase32_user_frame_smoke());
+}
+
+#[test_case]
+fn phase33_multi_elf_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase33_multi_elf_smoke());
+}
+
+#[test_case]
+fn phase34_exit_wait_smoke_works() {
+    assert!(kernel::task::program_loader::phase34_exit_wait_smoke());
+}
+
+#[test_case]
+fn phase35_syscall_table_smoke_works() {
+    assert!(kernel::task::program_loader::phase35_syscall_table_smoke());
+}
+
+#[test_case]
+fn phase36_storage_copyin_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase36_storage_copyin_smoke());
+}
+
+#[test_case]
+fn phase37_manifest_elf_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase37_manifest_elf_smoke());
+}
+
+#[test_case]
+fn phase38_demand_zero_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase38_demand_zero_smoke());
+}
+
+#[test_case]
+fn phase39_dynamic_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase39_dynamic_smoke());
+}
+
+#[test_case]
+fn phase40_integration_smoke_works() {
+    kernel::storage::format().expect("format should seed image manifests");
+    assert!(kernel::task::program_loader::phase40_integration_smoke());
+}
