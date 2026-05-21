@@ -65,7 +65,18 @@ pub enum SyscallId {
     RelocAppliedCount = 58,
     HwElfExecutionCount = 59,
     UserCopyProbe = 60,
+    ExitProcess = 61,
+    WaitProcess = 62,
+    ReadFileProbe = 63,
+    WriteFileProbe = 64,
 }
+
+static LAST_EXIT_CODE: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+static LAST_EXIT_RECORDED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+static WAIT_COMPLETED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyscallError {
@@ -388,8 +399,47 @@ pub fn invoke_raw(id: u64, arg0: u64) -> Result<u64, SyscallError> {
             }
             Ok(crate::task::program_loader::status().rejected_user_elf_count)
         }
+        x if x == SyscallId::UserCopyProbe as u64 => {
+            crate::user_copy::user_copy_probe(arg0).map_err(|_| SyscallError::InvalidArgument)
+        }
+        x if x == SyscallId::ExitProcess as u64 => {
+            LAST_EXIT_CODE.store(arg0, core::sync::atomic::Ordering::Relaxed);
+            LAST_EXIT_RECORDED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            Ok(0)
+        }
+        x if x == SyscallId::WaitProcess as u64 => {
+            if arg0 == 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            let code = LAST_EXIT_CODE.load(core::sync::atomic::Ordering::Relaxed) as i32;
+            WAIT_COMPLETED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            Ok(code as u64)
+        }
+        x if x == SyscallId::ReadFileProbe as u64 => {
+            if arg0 == 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            crate::task::program_loader::storage_read_probe(arg0)
+                .map_err(|_| SyscallError::InvalidArgument)
+        }
+        x if x == SyscallId::WriteFileProbe as u64 => {
+            if arg0 == 0 {
+                return Err(SyscallError::InvalidArgument);
+            }
+            crate::task::program_loader::storage_write_probe(arg0)
+                .map(|n| n as u64)
+                .map_err(|_| SyscallError::InvalidArgument)
+        }
         _ => Err(SyscallError::InvalidSyscall),
     }
+}
+
+pub fn exit_wait_status() -> (u64, u64, u64) {
+    (
+        LAST_EXIT_RECORDED.load(core::sync::atomic::Ordering::Relaxed),
+        WAIT_COMPLETED.load(core::sync::atomic::Ordering::Relaxed),
+        LAST_EXIT_CODE.load(core::sync::atomic::Ordering::Relaxed),
+    )
 }
 
 pub fn storage_list_files() -> Result<Vec<String>, SyscallError> {

@@ -1,4 +1,4 @@
-//! CPU syscall/sysret user entry (Phase 25).
+//! CPU syscall/sysret user entry (Phase 25+).
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -19,11 +19,34 @@ use crate::{
 static HW_SYSCALLS: AtomicU64 = AtomicU64::new(0);
 static HW_SYSRETS: AtomicU64 = AtomicU64::new(0);
 static HW_SYSCALL_READY: AtomicU64 = AtomicU64::new(0);
+pub static HW_SYSCALL_ALLOWED: AtomicU64 = AtomicU64::new(0);
+pub static HW_SYSCALL_REJECTED: AtomicU64 = AtomicU64::new(0);
+
+pub const ALLOWED_HW_SYSCALLS: &[SyscallId] = &[
+    SyscallId::GetTickCount,
+    SyscallId::UserCopyProbe,
+    SyscallId::ExitProcess,
+    SyscallId::WaitProcess,
+    SyscallId::ReadFileProbe,
+    SyscallId::WriteFileProbe,
+];
 
 pub fn status() -> (u64, u64) {
     (
         HW_SYSCALLS.load(Ordering::Relaxed),
         HW_SYSRETS.load(Ordering::Relaxed),
+    )
+}
+
+pub fn mark_dispatch_table_ready() {
+    HW_SYSCALL_READY.store(1, Ordering::Relaxed);
+}
+
+pub fn dispatch_table_status() -> (u64, u64, bool) {
+    (
+        HW_SYSCALL_ALLOWED.load(Ordering::Relaxed),
+        HW_SYSCALL_REJECTED.load(Ordering::Relaxed),
+        HW_SYSCALL_READY.load(Ordering::Relaxed) != 0,
     )
 }
 
@@ -33,6 +56,9 @@ pub fn record_hw_syscall_completed() {
 }
 
 pub fn init_syscall_msrs() {
+    if HW_SYSCALL_READY.load(Ordering::Relaxed) != 0 {
+        return;
+    }
     let syscall_entry = syscall_entry_trampoline as *const () as u64;
     unsafe {
         let user = crate::gdt::user_selectors();
@@ -48,6 +74,12 @@ pub fn init_syscall_msrs() {
         Efer::write(Efer::read() | EferFlags::SYSTEM_CALL_EXTENSIONS);
     }
     HW_SYSCALL_READY.store(1, Ordering::Relaxed);
+}
+
+pub fn is_allowed_hw_syscall(id: u64) -> bool {
+    ALLOWED_HW_SYSCALLS
+        .iter()
+        .any(|syscall| *syscall as u64 == id)
 }
 
 pub fn run_hw_tick_syscall(
@@ -73,7 +105,8 @@ pub fn run_hw_tick_syscall(
 extern "C" fn syscall_entry_trampoline() {
     let _ = crate::user_paging::restore_kernel_page_table();
     let (syscall_id, arg0) = unsafe { read_syscall_args() };
-    if syscall_id != SyscallId::GetTickCount as u64 {
+    if !is_allowed_hw_syscall(syscall_id) {
+        HW_SYSCALL_REJECTED.fetch_add(1, Ordering::Relaxed);
         user_syscall::store_hw_syscall_return(UserSyscallReturn {
             syscall_id,
             arg0,
@@ -87,6 +120,7 @@ extern "C" fn syscall_entry_trampoline() {
             core::arch::asm!("sysret", options(noreturn));
         }
     }
+    HW_SYSCALL_ALLOWED.fetch_add(1, Ordering::Relaxed);
     let frame = UserRegisterFrame {
         syscall_id,
         arg0,

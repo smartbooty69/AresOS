@@ -81,6 +81,14 @@ pub fn copy_to_user(src: &[u8], user_dst: u64) -> Result<usize, UserCopyError> {
     Ok(src.len())
 }
 
+pub fn user_copy_probe(user_buf: u64) -> Result<u64, ()> {
+    if probe_round_trip(user_buf) {
+        Ok(1)
+    } else {
+        Err(())
+    }
+}
+
 pub fn probe_round_trip(user_buf: u64) -> bool {
     let sample = b"ares-copyin-ok";
     copy_to_user(sample, user_buf).is_ok()
