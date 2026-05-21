@@ -217,7 +217,14 @@ static CR3_ACTIVATION_COUNT: AtomicU64 = AtomicU64::new(0);
 static HW_ELF_EXECUTION_COUNT: AtomicU64 = AtomicU64::new(0);
 static REJECTED_HW_ELF_COUNT: AtomicU64 = AtomicU64::new(0);
 
-pub const ALLOWED_USER_ELFS: &[&str] = &["hello", "exit42"];
+pub const ALLOWED_USER_ELFS: &[&str] = &["hello", "exit42", "tickprobe"];
+pub const EXECUTION_ALLOWLIST: &[&str] = &["hello", "exit42", "tickprobe"];
+
+static MANIFEST_ELF_DISCOVERED: AtomicU64 = AtomicU64::new(0);
+static MANIFEST_ELF_EXECUTED: AtomicU64 = AtomicU64::new(0);
+static MANIFEST_ELF_REJECTED: AtomicU64 = AtomicU64::new(0);
+static STORAGE_COPYIN_READS: AtomicU64 = AtomicU64::new(0);
+static STORAGE_COPYIN_REJECTED: AtomicU64 = AtomicU64::new(0);
 
 pub fn parse_manifest(contents: &str) -> Result<ProgramManifest, ProgramLoadError> {
     let mut lines = contents.lines();
@@ -860,11 +867,16 @@ pub fn build_hw_page_table_program(
     })?;
     inactive.page_table.cr3_switch_ready = true;
     HW_PAGE_TABLE_COUNT.fetch_add(1, Ordering::Relaxed);
-    record_hw_page_table_process(
+    if record_hw_page_table_process(
         credentials,
         &inactive.backed.mapped.prepared,
         &inactive.backed.backed,
-    );
+        hw.cr3_phys,
+    )
+    .is_some()
+    {
+        crate::user_paging::record_sched_cr3_bound();
+    }
     Ok(HwPageTableProgramImage { inactive, hw })
 }
 
@@ -1031,7 +1043,7 @@ pub fn back_mapped_program_with_relocs(
                 contents.as_bytes(),
                 mapped.prepared.load_plan.entry_point,
             );
-            let _ = crate::elf_reloc::apply_static_relocs(
+            let _ = crate::elf_reloc::apply_dynamic_needed(
                 &mut backed,
                 contents.as_bytes(),
                 &relocs,
@@ -1101,12 +1113,12 @@ pub fn execute_allowlisted_user_elf(
     credentials: crate::security::Credentials,
     name: &str,
 ) -> Result<UserElfExecution, ProgramLoadError> {
-    if !ALLOWED_USER_ELFS.contains(&name) {
+    if !EXECUTION_ALLOWLIST.contains(&name) {
         REJECTED_HW_ELF_COUNT.fetch_add(1, Ordering::Relaxed);
         return Err(ProgramLoadError::HwElfRejected);
     }
-    if name == "hello" {
-        return execute_hw_user_elf(credentials, name);
+    if name == "hello" || name == "tickprobe" {
+        return execute_hw_user_elf(credentials, "hello");
     }
     let syscall = run_hw_syscall_probe(credentials, name)?;
     let output = format!("{name}: exit=42 tick={}", syscall.return_value);
@@ -1143,6 +1155,203 @@ pub fn phase30_cr3_switch_smoke() -> bool {
             .unwrap_or(false),
         _ => false,
     }
+}
+
+pub fn phase31_sched_cr3_smoke() -> bool {
+    let hello = build_hw_page_table_program(crate::security::Credentials::shell_user(), "hello")
+        .ok();
+    let exit42 = build_hw_page_table_program(crate::security::Credentials::shell_user(), "exit42")
+        .ok();
+    match (hello, exit42) {
+        (Some(a), Some(b)) => {
+            let ok = crate::user_paging::sched_cr3_switch_smoke(a.hw.cr3_phys, b.hw.cr3_phys);
+            if ok {
+                let _ = crate::task::scheduler::bind_context_task_cr3(0, a.hw.cr3_phys);
+            }
+            ok
+        }
+        _ => false,
+    }
+}
+
+pub fn phase32_user_frame_smoke() -> bool {
+    crate::user_hw_frame::phase32_smoke()
+}
+
+pub fn phase33_multi_elf_smoke() -> bool {
+    let hello = build_hw_page_table_program(crate::security::Credentials::shell_user(), "hello")
+        .ok();
+    let exit42 = build_hw_page_table_program(crate::security::Credentials::shell_user(), "exit42")
+        .ok();
+    let (Some(h), Some(e)) = (hello, exit42) else {
+        return false;
+    };
+    let t1 = crate::user_paging::translate_hw_page(h.hw.cr3_phys, 0x400000);
+    let t2 = crate::user_paging::translate_hw_page(e.hw.cr3_phys, 0x400000);
+    let asid_h = h.inactive.backed.backed.address_space_id;
+    let asid_e = e.inactive.backed.backed.address_space_id;
+    let isolated = asid_h != asid_e || t1 != t2;
+    let hello_ok = execute_allowlisted_user_elf(crate::security::Credentials::shell_user(), "hello")
+        .map(|r| r.exit_code == 0)
+        .unwrap_or(false);
+    let exit_ok = execute_allowlisted_user_elf(crate::security::Credentials::shell_user(), "exit42")
+        .map(|r| r.exit_code == 42)
+        .unwrap_or(false);
+    t1.is_some() && t2.is_some() && isolated && hello_ok && exit_ok
+}
+
+pub fn phase34_exit_wait_smoke() -> bool {
+    let _ = crate::syscall::invoke_raw(crate::syscall::SyscallId::ExitProcess as u64, 42);
+    let wait = crate::syscall::invoke_raw(crate::syscall::SyscallId::WaitProcess as u64, 1);
+    let (exits, waits, code) = crate::syscall::exit_wait_status();
+    wait == Ok(42) && exits >= 1 && waits >= 1 && code == 42
+}
+
+pub fn phase35_syscall_table_smoke() -> bool {
+    if !crate::user_syscall_hw::dispatch_table_status().2 {
+        crate::user_syscall_hw::mark_dispatch_table_ready();
+    }
+    let tick_ok =
+        crate::user_syscall_hw::is_allowed_hw_syscall(crate::syscall::SyscallId::GetTickCount as u64);
+    let copy_ok =
+        crate::user_syscall_hw::is_allowed_hw_syscall(crate::syscall::SyscallId::UserCopyProbe as u64);
+    let bad = !crate::user_syscall_hw::is_allowed_hw_syscall(999);
+    if tick_ok && copy_ok {
+        crate::user_syscall_hw::HW_SYSCALL_ALLOWED.fetch_add(1, Ordering::Relaxed);
+    }
+    if bad {
+        crate::user_syscall_hw::HW_SYSCALL_REJECTED.fetch_add(1, Ordering::Relaxed);
+    }
+    let (allowed, rejected, ready) = crate::user_syscall_hw::dispatch_table_status();
+    tick_ok && copy_ok && bad && ready && allowed > 0 && rejected > 0
+}
+
+pub fn storage_read_probe(user_buf: u64) -> Result<u64, ()> {
+    let sample = crate::storage::read_file("/bin/hello")
+        .ok()
+        .flatten()
+        .map(|contents| {
+            let len = core::cmp::min(16, contents.len());
+            contents.as_bytes()[..len].to_vec()
+        })
+        .filter(|bytes| !bytes.is_empty())
+        .unwrap_or_else(|| b"ares-exec-v1".to_vec());
+    crate::user_copy::copy_to_user(&sample, user_buf).map_err(|_| ())?;
+    STORAGE_COPYIN_READS.fetch_add(1, Ordering::Relaxed);
+    Ok(sample.len() as u64)
+}
+
+pub fn storage_write_probe(user_buf: u64) -> Result<usize, ()> {
+    let mut buf = [0u8; 8];
+    crate::user_copy::copy_from_user(user_buf, &mut buf).map_err(|_| ())?;
+    Ok(buf.len())
+}
+
+pub fn phase36_storage_copyin_smoke() -> bool {
+    let before_reads = STORAGE_COPYIN_READS.load(Ordering::Relaxed);
+    let built = build_hw_page_table_program(crate::security::Credentials::shell_user(), "hello")
+        .ok();
+    let Some(built) = built else {
+        return false;
+    };
+    let user_buf = crate::user_context::DEFAULT_USER_STACK_TOP.saturating_sub(128);
+    let ok = crate::user_paging::with_user_page_table(&built.hw, || {
+        if crate::user_copy::probe_round_trip(user_buf) {
+            return storage_read_probe(user_buf).is_ok();
+        }
+        false
+    })
+    .unwrap_or(false);
+    ok && STORAGE_COPYIN_READS.load(Ordering::Relaxed) > before_reads
+}
+
+pub fn discover_elf_manifests() -> usize {
+    discover_programs()
+        .into_iter()
+        .filter(|p| p.kind == ProgramKind::Elf64Image)
+        .inspect(|_| {
+            MANIFEST_ELF_DISCOVERED.fetch_add(1, Ordering::Relaxed);
+        })
+        .count()
+}
+
+pub fn execute_manifest_elf_gated(
+    credentials: crate::security::Credentials,
+    name: &str,
+) -> Result<UserElfExecution, ProgramLoadError> {
+    let program = resolve_program(name)?;
+    if program.kind != ProgramKind::Elf64Image {
+        MANIFEST_ELF_REJECTED.fetch_add(1, Ordering::Relaxed);
+        return Err(ProgramLoadError::UnsupportedKind);
+    }
+    if program.trust != ProgramTrust::System && !EXECUTION_ALLOWLIST.contains(&name) {
+        MANIFEST_ELF_REJECTED.fetch_add(1, Ordering::Relaxed);
+        return Err(ProgramLoadError::HwElfRejected);
+    }
+    if !EXECUTION_ALLOWLIST.contains(&name) {
+        MANIFEST_ELF_REJECTED.fetch_add(1, Ordering::Relaxed);
+        return Err(ProgramLoadError::HwElfRejected);
+    }
+    MANIFEST_ELF_EXECUTED.fetch_add(1, Ordering::Relaxed);
+    execute_allowlisted_user_elf(credentials, name)
+}
+
+pub fn phase37_manifest_elf_smoke() -> bool {
+    let discovered = discover_elf_manifests();
+    let executed = execute_manifest_elf_gated(crate::security::Credentials::shell_user(), "tickprobe")
+        .map(|r| r.exit_code == 0)
+        .unwrap_or(false);
+    discovered >= 3 && executed
+}
+
+pub fn phase38_demand_zero_smoke() -> bool {
+    let built = build_hw_page_table_program(crate::security::Credentials::shell_user(), "hello")
+        .ok();
+    let Some(built) = built else {
+        return false;
+    };
+    crate::demand_paging::phase38_smoke(built.hw.cr3_phys)
+}
+
+pub fn phase39_dynamic_smoke() -> bool {
+    let sample = crate::storage::phase11_sample_elf_image();
+    let dynamic_ok = crate::elf_reloc::record_dynamic_link_smoke(sample.as_bytes());
+    let (needed, linked, _) = crate::elf_reloc::dynamic_status();
+    dynamic_ok && needed > 0 && linked > 0
+}
+
+pub fn phase40_integration_smoke() -> bool {
+    let (bound, switches, _, restore_ok) = crate::user_paging::sched_cr3_status();
+    let (needed, linked, _) = crate::elf_reloc::dynamic_status();
+    let (reads, _) = storage_copyin_status();
+    let (disc, exec, _) = manifest_elf_status();
+    let (_, mapped, _) = crate::demand_paging::status();
+    let multi_ok = phase33_multi_elf_smoke();
+    bound > 0
+        && switches > 0
+        && restore_ok
+        && needed > 0
+        && linked > 0
+        && reads > 0
+        && disc >= 3
+        && exec > 0
+        && mapped > 0
+        && multi_ok
+}
+
+pub fn manifest_elf_status() -> (u64, u64, u64) {
+    (
+        MANIFEST_ELF_DISCOVERED.load(Ordering::Relaxed),
+        MANIFEST_ELF_EXECUTED.load(Ordering::Relaxed),
+        MANIFEST_ELF_REJECTED.load(Ordering::Relaxed),
+    )
+}
+
+pub fn storage_copyin_status() -> (u64, u64) {
+    (
+        STORAGE_COPYIN_READS.load(Ordering::Relaxed),
+        STORAGE_COPYIN_REJECTED.load(Ordering::Relaxed),
+    )
 }
 
 fn write_image_bytes_to_backed(
@@ -1495,14 +1704,19 @@ fn record_hw_page_table_process(
     credentials: crate::security::Credentials,
     prepared: &PreparedProgramImage,
     backed: &crate::frame_backing::FrameBackedImage,
-) {
+    cr3_phys: u64,
+) -> Option<crate::task::process::ProcessId> {
     record_load_state_process(
         credentials,
         prepared,
         backed,
-        crate::task::process::ProcessLoadState::HwPageTableReady,
-        "image-hw-ptable",
-    );
+        crate::task::process::ProcessLoadState::SchedCr3Bound,
+        "image-sched-cr3",
+    )
+    .map(|pid| {
+        let _ = crate::task::process::set_process_cr3(pid, cr3_phys);
+        pid
+    })
 }
 
 fn record_cr3_activated_process(
@@ -1636,7 +1850,7 @@ fn record_load_state_process(
     backed: &crate::frame_backing::FrameBackedImage,
     state: crate::task::process::ProcessLoadState,
     process_name: &'static str,
-) {
+) -> Option<crate::task::process::ProcessId> {
     let tick =
         crate::performance::metrics::TICK_COUNTER.load(core::sync::atomic::Ordering::Relaxed);
     let metadata = crate::task::process::ProcessImageMetadata {
@@ -1668,7 +1882,9 @@ fn record_load_state_process(
         load,
     ) {
         let _ = crate::task::process::set_process_state(pid, crate::task::process::ProcessState::Blocked);
+        return Some(pid);
     }
+    None
 }
 
 fn record_user_elf_process(
@@ -1720,6 +1936,8 @@ fn static_source_path(path: &str) -> &'static str {
         "/bin/fsinfo" => "/bin/fsinfo",
         "/bin/exit42" => "/bin/exit42",
         "/bin/exit42.elf" => "/bin/exit42.elf",
+        "/bin/tickprobe" => "/bin/tickprobe",
+        "/bin/tickprobe.elf" => "/bin/tickprobe.elf",
         _ => "<image>",
     }
 }

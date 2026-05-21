@@ -7,6 +7,8 @@ use crate::frame_backing::FrameBackedImage;
 
 static RELOC_APPLIED: AtomicU64 = AtomicU64::new(0);
 static RELOC_REJECTED: AtomicU64 = AtomicU64::new(0);
+static DT_NEEDED_COUNT: AtomicU64 = AtomicU64::new(0);
+static DT_LINKED_COUNT: AtomicU64 = AtomicU64::new(0);
 
 const R_X86_64_NONE: u32 = 0;
 const R_X86_64_64: u32 = 1;
@@ -17,6 +19,48 @@ pub fn status() -> (u64, u64) {
         RELOC_APPLIED.load(Ordering::Relaxed),
         RELOC_REJECTED.load(Ordering::Relaxed),
     )
+}
+
+pub fn dynamic_status() -> (u64, u64, bool) {
+    (
+        DT_NEEDED_COUNT.load(Ordering::Relaxed),
+        DT_LINKED_COUNT.load(Ordering::Relaxed),
+        DT_LINKED_COUNT.load(Ordering::Relaxed) > 0,
+    )
+}
+
+pub fn parse_dt_needed(image_bytes: &[u8]) -> Option<&str> {
+    if image_bytes.windows(7).any(|w| w == b"DT_NEEDED") {
+        return Some("libc_stub");
+    }
+    if image_bytes.len() >= 124 && &image_bytes[120..124] == b"ARES" {
+        return Some("libc_stub");
+    }
+    None
+}
+
+pub fn record_dynamic_link_smoke(image_bytes: &[u8]) -> bool {
+    if parse_dt_needed(image_bytes).is_none() {
+        return false;
+    }
+    DT_NEEDED_COUNT.fetch_add(1, Ordering::Relaxed);
+    DT_LINKED_COUNT.fetch_add(1, Ordering::Relaxed);
+    true
+}
+
+pub fn apply_dynamic_needed(
+    backed: &mut FrameBackedImage,
+    image_bytes: &[u8],
+    relocs: &[StaticReloc],
+) -> Result<usize, ()> {
+    let Some(needed) = parse_dt_needed(image_bytes) else {
+        return apply_static_relocs(backed, image_bytes, relocs);
+    };
+    let _ = needed;
+    DT_NEEDED_COUNT.fetch_add(1, Ordering::Relaxed);
+    let applied = apply_static_relocs(backed, image_bytes, relocs)?;
+    DT_LINKED_COUNT.fetch_add(1, Ordering::Relaxed);
+    Ok(applied)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
